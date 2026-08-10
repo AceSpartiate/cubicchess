@@ -118,6 +118,11 @@ No puzzle shipped without passing an engine check:
 - **Legality:** every move in the solution (and every scripted reply) is legal for the side on move.
 - **Outcome:** "mate" puzzles are a real mate at the stated length; "win" puzzles genuinely net ≥2
   material that the opponent can't immediately win back.
+
+  **Measured, not assumed:** all 50 shipped entries are tagged `k:'win'`. There are **zero** `mate`
+  entries in `PUZZLE_LIB`, so the mate half of this rule currently validates nothing. The `k` field
+  keeps both values because the miner can produce either; the library just does not happen to hold
+  a mate. Do not repeat the old claim that the generator serves forced mates.
 - **Integrity:** exactly one king per side; and for library puzzles, side-to-move parity matches the
   move count (the specific bug that was fixed — verified 0 violations across all 50).
 

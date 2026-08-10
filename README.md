@@ -31,7 +31,9 @@ then open `http://localhost:8131/`. `localStorage` is unreliable over `file://`,
 so opening `index.html` directly will silently fail to save Coach progress and
 settings — and you will spend an afternoon chasing a bug that is not there.
 
-It needs WebGL. It needs no network.
+It needs WebGL. Rendering, Practice, Competitive, the AI and all 140 puzzles need **no network at
+all** — that is what vendoring three.js bought. The one exception is the online mode, which still
+calls `api.github.com`; see below, it is being replaced.
 
 ## Hosting
 
@@ -58,7 +60,9 @@ re-run the checks in `MAINTENANCE.md`.
 - **11 themes.** default, wooden, silver, green, pink, lightblue, bw, red, purple, orange, american.
 - **Coach mode.** 90 curated puzzles across 9 categories, 10 each, with hints and saved progress.
 - **Puzzle generator.** 50 tactics mined from engine self-play, filtered by colour, game phase,
-  and length. Every one is a real fork, combination, or forced mate — never a free-piece grab.
+  and length. Every one is a real fork or combination that nets material — never a free-piece grab.
+  **None of the 50 is a forced mate.** Older versions of these docs claimed otherwise; the `k` tag
+  reads `win` on all fifty. Mates live in Coach mode's `mate` category instead.
 - **Play online.** Trade turns with someone else. *Being rebuilt — see below.*
 
 ## Online play is being replaced

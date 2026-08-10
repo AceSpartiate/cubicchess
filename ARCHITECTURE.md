@@ -13,7 +13,13 @@ The HTML contains three `<script>` blocks:
 2. **three.js** — r128, **vendored** as `three.min.js` beside the page and loaded with
    `<script src="three.min.js">`. It used to come from cdnjs; a school content filter blocking
    the CDN left students with a blank board and no error message, so the file now travels with
-   the repo. The page has no external network dependency of any kind.
+   the repo. Nothing about **rendering** touches the network any more.
+
+That leaves exactly one external host, and no doc in this package used to admit it: the online
+mode calls **`api.github.com`** from `ghFetch()` (line 2772), authenticating with a Bearer token
+and polling every 5 seconds while a game is live. It is the only `fetch` in the file. Both README
+and this document once said three.js was the sole external dependency; that was never true, and an
+"offline build" made by following the old instructions would still have phoned home.
 3. **The main script** — the display model (rules the UI uses), rendering, input handling, themes,
    Coach mode, and the puzzle generator/library.
 

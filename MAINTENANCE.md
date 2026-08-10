@@ -4,6 +4,24 @@ How to change the file without breaking it. The game is one self-contained HTML 
 direct — but two things must stay true after any change: the two rule implementations must agree
 (perft), and every embedded puzzle must stay valid.
 
+## Just run the suite
+
+Everything below this section is now automated. `python tools/check.py` does it, the
+pre-commit hook does it for you, and `tools/validate.js` replays all 140 puzzles
+through the engine's own `make()` and `scoreAllRoot()` rather than through a third
+implementation of the rules written to check the other two.
+
+**A caution earned the hard way.** A check that has never failed is not a passing
+check, it is an unproven one. All three content gates here were made to fail on
+purpose before being trusted, and the third attempt was inert: it edited `TRI1`,
+which `genMoves` never reads — line 780 spells that bound as a literal `26` for both
+bishop and queen. The mutation looked like a rules change, changed nothing, and the
+green result was the test's fault rather than the gate's. If you add a check, break
+the thing it guards and watch it go red before you believe it.
+
+The rest of this section explains what those checks do and how to run the pieces by
+hand when you are diagnosing something.
+
 ## The golden checks (run after any change)
 
 1. **Syntax.** Extract the main `<script>` and run `node --check` on it. A stray comma in the

@@ -1,0 +1,10 @@
+# The whole game is one 3,100-line index.html. Every file in the project is LF,
+# and it is pinned that way on purpose: if a Windows editor were allowed to
+# write CRLF, a one-line change would show up as a whole-file diff and the
+# history would stop being readable.
+* text=auto eol=lf
+
+# Vendored three.js r128. Never hand-edit it, and keep it out of diffs — a
+# 603KB minified blob rewritten by a normalization pass would bury every real
+# change in the commit that touched it.
+three.min.js linguist-vendored -diff

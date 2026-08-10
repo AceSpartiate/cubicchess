@@ -1,0 +1,11 @@
+{
+  "name": "Cubic Chess",
+  "short_name": "Cubic Chess",
+  "description": "Three-dimensional chess on an 8x8x8 cube.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#060a12",
+  "theme_color": "#060a12"
+}

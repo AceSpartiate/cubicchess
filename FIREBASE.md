@@ -63,6 +63,7 @@ The annotation that used to live in the file is the section below instead.
 | `moves/$ply` `.write` | `lastUid !== auth.uid` | **moving twice in a row.** `root` is pre-write state, so this reads "the last person to move was not me" |
 | `moves/$ply` `.validate` | `newData.parent().parent().child('lastUid') === auth.uid` | dodging the above by never updating `lastUid` — forces it into the same atomic write. Two `.parent()` hops climb `$ply` → `moves` → the room, and reading through `newData` is what makes it POST-write |
 | `moves/$ply` `.write` | `$ply !== '0' \|\| w seat is me` | black playing the opening move, when no `lastUid` exists yet |
+| `lastUid` `.write` | seated-uid check | **not a restriction — a grant, and without it the game does not work at all.** A multi-path PATCH is evaluated at *each written path separately*, so `moves/5` and `lastUid` are two writes. `lastUid` had no `.write` of its own and inherited the room's, which is false for a room that already exists — so every move was denied and no game could be played. Caught by the live test, not by the Playground, which only ever exercises one path |
 | `v` `.validate` | `0 … 2097151` | a move integer outside the 21 bits `encodeMove()` produces |
 | `$other` everywhere | `false` | inventing new fields anywhere in the tree |
 
@@ -81,10 +82,33 @@ They do **not** stop an illegal chess move — no rules language can play chess.
 stays where it already is: every inbound move is replayed through `legalMoves()`
 before it lands, so a forged move stops the board at the last legal position.
 
-### Test them before trusting them
+### Test them against the real project
 
-**Rules Playground**, on the same page. These rules have never run against a real
-project, so treat them as unproven until these five cases behave:
+```
+python tools/test-rules.py
+```
+
+28 cases against the live database: eight things honest play must be allowed to do,
+twenty a cheat or a stranger must not. **Run it after every rules change.** It has
+already caught two bugs that nothing else would have:
+
+- `lastUid` had no `.write` of its own, so the client's atomic move PATCH was denied
+  and **no move could be played in any game.**
+- The room grant said *"writable if it does not exist **or is older than 24 hours**"*,
+  and that second clause named no uid — so a day after creation **any stranger with a
+  free anonymous token could delete a room, rewrite its history, or seat themselves in
+  it**, because write grants cascade past every rule beneath them.
+
+The two hid each other: the only window in which the game worked was the window in
+which it was wide open.
+
+### The Playground is not enough
+
+**Rules Playground**, on the same page, is still worth a minute — but understand its
+limit. It simulates **one path at a time**, and the client's move is a multi-path
+write whose two halves are evaluated separately. A rule set can pass every Playground
+case and still make the game unplayable. That is exactly what happened here. Use it
+for spot checks, not for proof:
 
 | Simulate | Location | Expect |
 |---|---|---|

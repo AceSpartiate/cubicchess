@@ -6,13 +6,23 @@
     "rooms": {
       "$code": {
         ".read": "auth != null && $code.length === 4",
-        ".write": "auth != null && (!data.exists() || data.child('createdAt').val() < now - 86400000)",
+        ".write": "auth != null && !data.exists()",
         ".validate": "newData.hasChildren(['createdAt','seats']) && (newData.child('seats/w/uid').val() === auth.uid || newData.child('seats/b/uid').val() === auth.uid) && (data.exists() || !newData.hasChild('moves'))",
 
         "createdAt": { ".validate": "newData.val() === now" },
-        "status":    { ".validate": "newData.isString() && newData.val().length <= 8" },
-        "result":    { ".validate": "newData.isString() && newData.val().length <= 16" },
-        "lastUid":   { ".validate": "newData.val() === auth.uid" },
+
+        "status": {
+          ".write": "auth != null && (root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid || root.child('rooms/' + $code + '/seats/b/uid').val() === auth.uid)",
+          ".validate": "newData.isString() && newData.val().length <= 8"
+        },
+        "result": {
+          ".write": "auth != null && (root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid || root.child('rooms/' + $code + '/seats/b/uid').val() === auth.uid)",
+          ".validate": "newData.isString() && newData.val().length <= 16"
+        },
+        "lastUid": {
+          ".write": "auth != null && (root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid || root.child('rooms/' + $code + '/seats/b/uid').val() === auth.uid)",
+          ".validate": "newData.val() === auth.uid"
+        },
 
         "seats": {
           "$c": {

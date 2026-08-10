@@ -61,7 +61,7 @@ The annotation that used to live in the file is the section below instead.
 | `moves/$ply` `.write` | `!data.exists()` | overwriting or reordering a played move; also makes retries idempotent, so a failed send can safely be resent |
 | `moves/$ply` `.write` | seated-uid check | a third party who knows the code writing moves into your game |
 | `moves/$ply` `.write` | `lastUid !== auth.uid` | **moving twice in a row.** `root` is pre-write state, so this reads "the last person to move was not me" |
-| `moves/$ply` `.validate` | `newData.root()...lastUid === auth.uid` | dodging the above by never updating `lastUid` — forces it into the same atomic write |
+| `moves/$ply` `.validate` | `newData.parent().parent().child('lastUid') === auth.uid` | dodging the above by never updating `lastUid` — forces it into the same atomic write. Two `.parent()` hops climb `$ply` → `moves` → the room, and reading through `newData` is what makes it POST-write |
 | `moves/$ply` `.write` | `$ply !== '0' \|\| w seat is me` | black playing the opening move, when no `lastUid` exists yet |
 | `v` `.validate` | `0 … 2097151` | a move integer outside the 21 bits `encodeMove()` produces |
 | `$other` everywhere | `false` | inventing new fields anywhere in the tree |

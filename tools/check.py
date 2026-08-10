@@ -197,10 +197,43 @@ else:
                                     % (where, type(v).__name__))
                     else:
                         walk(v, where)
+        # Second failure class, and the reason this is a lint and not just a shape check:
+        # `newData.root()` was published and rejected with "No such method/property
+        # 'root'". A rules expression is a tiny language with a CLOSED set of methods -
+        # `root` is a standalone variable, never a method on a snapshot - and anything
+        # outside that set is a publish-time error the console reports by line number,
+        # which is no help at all when you are reading the file on a different machine.
+        SNAP_METHODS = {
+            "val", "child", "parent", "hasChild", "hasChildren", "exists", "getPriority",
+            "isNumber", "isString", "isBoolean",
+            "contains", "beginsWith", "endsWith", "replace", "toLowerCase", "toUpperCase",
+            "matches",
+        }
+        def lint_expr(expr, where):
+            for meth in set(re.findall(r'\.([A-Za-z_][A-Za-z0-9_]*)\s*\(', expr)):
+                if meth in SNAP_METHODS:
+                    continue
+                hint = ""
+                if meth == "root":
+                    hint = (" - `root` is a standalone variable holding the PRE-write tree; "
+                            "for POST-write state walk up with .parent()")
+                elif meth == "length":
+                    hint = " - length is a property, not a method: use .length without ()"
+                errs.append("%s calls .%s(), which is not a rules method%s" % (where, meth, hint))
+        def walk_exprs(node, path):
+            for k, v in node.items():
+                where = (path + "/" + k) if path else k
+                if k.startswith("."):
+                    if isinstance(v, str):
+                        lint_expr(v, where)
+                elif isinstance(v, dict):
+                    walk_exprs(v, where)
+
         if list(doc.keys()) != ["rules"]:
             bad("the top level must be exactly {\"rules\": ...}, found: %s" % list(doc.keys()))
         else:
             walk(doc["rules"], "")
+            walk_exprs(doc["rules"], "")
         for e in errs[:8]:
             bad("rules: " + e)
         if not errs and list(doc.keys()) == ["rules"]:

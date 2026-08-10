@@ -6,34 +6,18 @@
     "rooms": {
       "$code": {
         ".read": "auth != null && $code.length === 4",
-
-        "//1": "Create a room, or recycle one older than 24h. This grant CASCADES to",
-        "//2": "every child, which is why the guards below live in .validate: a deeper",
-        "//3": "'.write': false cannot revoke a parent's grant in RTDB. On a later write",
-        "//4": "to moves/N this is false (data.exists()), so evaluation falls through to",
-        "//5": "the deeper rules.",
         ".write": "auth != null && (!data.exists() || data.child('createdAt').val() < now - 86400000)",
-
-        "//6": "Second clause is the create-time guard: because the grant above cascades,",
-        "//7": "without it a room could be CREATED with a fabricated move list already in",
-        "//8": "it, bypassing every per-move rule underneath.",
         ".validate": "newData.hasChildren(['createdAt','seats']) && (newData.child('seats/w/uid').val() === auth.uid || newData.child('seats/b/uid').val() === auth.uid) && (data.exists() || !newData.hasChild('moves'))",
 
         "createdAt": { ".validate": "newData.val() === now" },
         "status":    { ".validate": "newData.isString() && newData.val().length <= 8" },
         "result":    { ".validate": "newData.isString() && newData.val().length <= 16" },
-
-        "//9":  "Who moved last. Written in the SAME multi-path PATCH as the move, which",
-        "//10": "is what makes strict alternation enforceable - see moves/$ply below.",
-        "lastUid": { ".validate": "newData.val() === auth.uid" },
+        "lastUid":   { ".validate": "newData.val() === auth.uid" },
 
         "seats": {
           "$c": {
-            ".validate": "$c === 'w' || $c === 'b'",
-
-            "//11": "Claim an empty seat, refresh your own, or reclaim one dark for 90s.",
-            "//12": "Final clause stops ONE uid holding BOTH seats (two tabs, one machine).",
             ".write": "auth != null && (!data.exists() || data.child('uid').val() === auth.uid || data.child('lastSeen').val() < now - 90000) && (($c === 'w' && root.child('rooms/' + $code + '/seats/b/uid').val() !== auth.uid) || ($c === 'b' && root.child('rooms/' + $code + '/seats/w/uid').val() !== auth.uid))",
+            ".validate": "($c === 'w' || $c === 'b') && newData.hasChildren(['uid','name','lastSeen'])",
 
             "uid":      { ".validate": "newData.val() === auth.uid" },
             "name":     { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12" },
@@ -44,18 +28,7 @@
 
         "moves": {
           "$ply": {
-            "//13": "Append-only. !data.exists() makes every move write idempotent, so a",
-            "//14": "retry is safe: a rejection on retry means the move already landed.",
-            "//15": "Only a seated uid may write at all.",
-            "//16": "STRICT ALTERNATION, in the two lastUid clauses: `root` is PRE-write",
-            "//17": "state, so the first reads 'the last person to move was not me'. The",
-            "//18": "second uses newData.root() (POST-write) to force the client to claim",
-            "//19": "lastUid in the same atomic PATCH - otherwise you could move twice by",
-            "//20": "simply never updating it.",
-            "//21": "The $ply === '0' clause closes the opening: with no lastUid yet, the",
-            "//22": "first clause is vacuously true, so black could otherwise write move 0.",
             ".write": "auth != null && !data.exists() && (root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid || root.child('rooms/' + $code + '/seats/b/uid').val() === auth.uid) && root.child('rooms/' + $code + '/lastUid').val() !== auth.uid && ($ply !== '0' || root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid)",
-
             ".validate": "newData.hasChildren(['v','uid']) && $ply.matches(/^[0-9]{1,3}$/) && newData.root().child('rooms/' + $code + '/lastUid').val() === auth.uid",
 
             "v":      { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2097151" },
@@ -75,7 +48,8 @@
         "stats": {
           "w": { ".validate": "newData.isNumber() && newData.val() >= 0" },
           "l": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-          "d": { ".validate": "newData.isNumber() && newData.val() >= 0" }
+          "d": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+          "$other": { ".validate": false }
         }
       }
     }

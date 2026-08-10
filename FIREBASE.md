@@ -43,6 +43,33 @@ Firebase offers two databases and the console pushes you toward the other one.
    **`firebase/database.rules.json`** from this repo.
 3. **Publish.**
 
+That file is strict, comment-free JSON on purpose. In RTDB rules **any key that does
+not start with a dot is a child path and must map to an object**, so a `"// note":
+"text"` pair — the obvious way to annotate — is rejected by the console with
+`Line N: Expected '{'`. It shipped that way once. `tools/check.py` check 8 now walks
+the file and fails on any child path that is not an object, so it cannot happen again.
+The annotation that used to live in the file is the section below instead.
+
+### What each clause is doing
+
+| Where | Clause | Stops |
+|---|---|---|
+| `$code` `.write` | `!data.exists() \|\| createdAt < now - 24h` | writing to an existing room through the create grant; lets a day-old code be recycled |
+| `$code` `.validate` | `data.exists() \|\| !newData.hasChild('moves')` | **seeding a brand-new room with a fabricated move list.** The create grant cascades to every child, so without this every per-move rule below could be skipped by writing the whole room at once |
+| `seats/$c` `.write` | `!data.exists() \|\| uid === auth.uid \|\| lastSeen < now - 90s` | stealing a seat someone is actively sitting in; still allows reclaiming one dark for 90 seconds |
+| `seats/$c` `.write` | the trailing `w`/`b` cross-check | one uid holding **both** seats — two tabs on one Chromebook |
+| `moves/$ply` `.write` | `!data.exists()` | overwriting or reordering a played move; also makes retries idempotent, so a failed send can safely be resent |
+| `moves/$ply` `.write` | seated-uid check | a third party who knows the code writing moves into your game |
+| `moves/$ply` `.write` | `lastUid !== auth.uid` | **moving twice in a row.** `root` is pre-write state, so this reads "the last person to move was not me" |
+| `moves/$ply` `.validate` | `newData.root()...lastUid === auth.uid` | dodging the above by never updating `lastUid` — forces it into the same atomic write |
+| `moves/$ply` `.write` | `$ply !== '0' \|\| w seat is me` | black playing the opening move, when no `lastUid` exists yet |
+| `v` `.validate` | `0 … 2097151` | a move integer outside the 21 bits `encodeMove()` produces |
+| `$other` everywhere | `false` | inventing new fields anywhere in the tree |
+
+What they deliberately do **not** stop is an illegal *chess* move — no rules language
+can play chess. That stays where it is: every inbound move is replayed through
+`legalMoves()` before it lands.
+
 These rules are the entire security boundary. There is no server, so nothing else
 stands between a student and the database. They stop: enumerating rooms, writing
 without auth, taking an occupied live seat, holding both seats yourself, overwriting

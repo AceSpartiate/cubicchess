@@ -157,7 +157,62 @@ else:
     else:
         ok("build %s" % v)
 
-print("\n8. Nothing is half-staged")
+print("\n8. The database rules are shaped like database rules")
+# This check exists because the rules were once published with "//1": "a comment" as a
+# child key. In RTDB any key NOT starting with '.' is a PATH and must map to an object,
+# so the console rejected the whole file with "Line 10: Expected '{'" - after the file
+# had been committed, pushed, and handed over as ready to paste. Valid JSON is not the
+# same as valid rules, and only the second one matters.
+RULES = os.path.join(ROOT, "firebase", "database.rules.json")
+RULE_KEYS = {".read", ".write", ".validate", ".indexOn"}
+if not os.path.exists(RULES):
+    skip("no firebase/database.rules.json")
+else:
+    try:
+        doc = json.load(open(RULES, encoding="utf-8"))
+    except Exception as e:
+        bad("database.rules.json is not valid JSON: %s" % e)
+    else:
+        errs = []
+        def walk(node, path):
+            if not isinstance(node, dict):
+                errs.append("%s should be an object, is %s" % (path or "(root)", type(node).__name__))
+                return
+            for k, v in node.items():
+                where = (path + "/" + k) if path else k
+                if k.startswith("."):
+                    if k not in RULE_KEYS:
+                        errs.append("%s is not a rule name (expected one of %s)"
+                                    % (where, ", ".join(sorted(RULE_KEYS))))
+                    elif k == ".indexOn":
+                        if not isinstance(v, (list, str)):
+                            errs.append("%s must be a string or list" % where)
+                    elif not isinstance(v, (str, bool)):
+                        errs.append("%s must be a string or boolean, is %s" % (where, type(v).__name__))
+                else:
+                    # THE ONE THAT MATTERS: a child path must be an object.
+                    if not isinstance(v, dict):
+                        errs.append("%s is a child path, so it must map to an object - "
+                                    "a %s here is what the console rejects with \"Expected '{'\""
+                                    % (where, type(v).__name__))
+                    else:
+                        walk(v, where)
+        if list(doc.keys()) != ["rules"]:
+            bad("the top level must be exactly {\"rules\": ...}, found: %s" % list(doc.keys()))
+        else:
+            walk(doc["rules"], "")
+        for e in errs[:8]:
+            bad("rules: " + e)
+        if not errs and list(doc.keys()) == ["rules"]:
+            n = [0]
+            def count(d):
+                for k, v in d.items():
+                    if not k.startswith("."):
+                        n[0] += 1; count(v)
+            count(doc["rules"])
+            ok("rules well-formed (%d path nodes)" % n[0])
+
+print("\n9. Nothing is half-staged")
 if shutil.which("git") is None:
     skip("git not on PATH")
 else:

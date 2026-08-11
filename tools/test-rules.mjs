@@ -98,9 +98,12 @@ allow('H15 create room, creator takes black', {}, [['rooms/PLDN', {
 // reclaim a dark seat in a lobby that never started
 let lob = request({}, [['rooms/HJKL', { createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, T).root;
 lob = request(lob, [['rooms/HJKL/seats/b', B.uid + ':Mira'], ['rooms/HJKL/seen/b', SV]], B, T).root;
-allow('H16 reclaim a seat dark 91s while no moves', lob, [
+deny('H16 a lobby seat dark only 91s is NOT reclaimable', lob, [
   ['rooms/HJKL/seats/b', C.uid + ':Rae'], ['rooms/HJKL/seen/b', SV]
 ], C, T + 95000);
+allow('H16b a lobby seat dark 6 minutes is reclaimable', lob, [
+  ['rooms/HJKL/seats/b', C.uid + ':Rae'], ['rooms/HJKL/seen/b', SV]
+], C, T + 360000);
 
 // recycle
 const stale = T + 700000;
@@ -237,6 +240,95 @@ deny('A65 two rooms squatted in one PATCH at bad codes', {}, [
 deny('A66 recycle a lobby whose creator is still heartbeating', solo, [['rooms/ZKMB', { createdAt: SV, moves: '', seats: { w: C.uid + ':E' }, seen: { w: SV } }]], C, T + 30000);
 deny('A67 recycle a lobby dark only 5 minutes', solo, [['rooms/ZKMB', { createdAt: SV, moves: '', seats: { w: C.uid + ':E' }, seen: { w: SV } }]], C, T + 300000);
 allow('H20 recycle a lobby dark 11 minutes', solo, [['rooms/ZKMB', { createdAt: SV, moves: '', seats: { w: C.uid + ':E' }, seen: { w: SV } }]], C, T + 660000);
+
+/* ---------------------------------------------------------------- the second attack pass
+ * Each of these was a finding against the redesign. They were written here and watched
+ * to fail before the rule was touched. */
+
+// A live game, two seated players, two plies played.
+function game(now = T) {
+  let x = request({}, [['rooms/KMTB', {
+    createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, now).root;
+  x = request(x, [['rooms/KMTB/seats/b', B.uid + ':Mira'], ['rooms/KMTB/seen/b', SV]], B, now).root;
+  x = request(x, [['rooms/KMTB/moves', oct(1)]], A, now).root;
+  x = request(x, [['rooms/KMTB/moves', oct(1) + oct(2)]], B, now).root;
+  return x;
+}
+
+// F11. `over` freezes on the PARENT node, so ANY claim killed the game. A player about
+// to lose wrote over/w='w' and the move list was dead, unappealably. An unresolved
+// claim must not freeze; only a resignation or an agreed outcome may.
+let f = game();
+f = allow('F1 white claims a win (unresolved)', f, [['rooms/KMTB/over/w', 'w']], A).root;
+allow('F2 black plays on through an unresolved claim', f,
+  [['rooms/KMTB/moves', oct(1) + oct(2) + oct(3)]], A);
+
+let f2 = game();
+f2 = allow('F3 white resigns (names black the winner)', f2, [['rooms/KMTB/over/w', 'b']], A).root;
+deny('F4 nobody plays on after a resignation', f2,
+  [['rooms/KMTB/moves', oct(1) + oct(2) + oct(3)]], A);
+
+let f3 = game();
+f3 = allow('F5 white offers a draw', f3, [['rooms/KMTB/over/w', 'd']], A).root;
+f3 = allow('F6 black agrees to the draw', f3, [['rooms/KMTB/over/b', 'd']], B).root;
+deny('F7 nobody plays on after an agreed draw', f3,
+  [['rooms/KMTB/moves', oct(1) + oct(2) + oct(3)]], A);
+
+// F5/F18. A stranger takes the open seat of a lobby and ends the game before it starts,
+// pinning the code. An outcome cannot exist before a move does.
+let pre = request({}, [['rooms/PLKN', {
+  createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, T).root;
+pre = request(pre, [['rooms/PLKN/seats/b', C.uid + ':Eve'], ['rooms/PLKN/seen/b', SV]], C, T).root;
+deny('F8 an outcome claimed before any move exists', pre, [['rooms/PLKN/over/b', 'w']], C);
+
+// F0. $other/.validate:false only guards depth 1 - .validate never runs on an ancestor
+// of the written leg, so a blob two levels down rode in on the create grant.
+deny('F9 blob smuggled two levels deep at create time', {}, [
+  ['rooms/WXZB', { createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }],
+  ['rooms/WXZB/junk/deep', 'x'.repeat(500)]
+], A);
+deny('F10 blob three levels deep at create time', {}, [
+  ['rooms/WXZC', { createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }],
+  ['rooms/WXZC/a/b/c', 'x'.repeat(500)]
+], A);
+
+// F12. 90s is UNDER Chrome's background-tab throttle (~1 timer tick a minute), so a kid
+// who tabs to Classroom for two minutes came back to a stranger in their seat.
+let pre2 = request({}, [['rooms/TRKN', {
+  createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, T).root;
+deny('F11 take a lobby seat dark only 2 minutes', pre2,
+  [['rooms/TRKN/seats/w', C.uid + ':Eve'], ['rooms/TRKN/seen/w', SV]], C, T + 120000);
+allow('F12 take a lobby seat dark 6 minutes', pre2,
+  [['rooms/TRKN/seats/w', C.uid + ':Eve'], ['rooms/TRKN/seen/w', SV]], C, T + 360000);
+
+// F6/F13. A seat welded to one anonymous uid forever orphans a student whose Chromebook
+// was re-imaged or whose site data was cleared. Reclaim mid-game, but only after long
+// enough that it is not a griefing window.
+let mid = game();
+deny('F13 take a mid-game seat dark 2 minutes', mid,
+  [['rooms/KMTB/seats/b', C.uid + ':Eve'], ['rooms/KMTB/seen/b', SV]], C, T + 120000);
+allow('F14 rejoin a mid-game seat dark 11 minutes', mid,
+  [['rooms/KMTB/seats/b', C.uid + ':Eve'], ['rooms/KMTB/seen/b', SV]], C, T + 660000);
+
+// F7/F20. If matches() is Java-flavoured, `$` sits before a final line terminator, so a
+// newline slips into the alphabet check - and moves re-validates the WHOLE string every
+// write, so once one is in, no further ply ever validates and the game is bricked.
+deny('F15 a newline inside the move string', game(),
+  [['rooms/KMTB/moves', oct(1) + oct(2) + '00000\n0']], A);
+
+// F14/F15. The nickname charset rejected accented names - a real set of students here -
+// and the uid half of that regex could only ever produce false rejections.
+allow('F16 an accented nickname', {}, [['rooms/JSFB', {
+  createdAt: SV, moves: '', seats: { w: A.uid + ':José' }, seen: { w: SV } }]], A);
+allow('F17 a nickname with an apostrophe', {}, [['rooms/JSFC', {
+  createdAt: SV, moves: '', seats: { w: A.uid + ":O'Neil" }, seen: { w: SV } }]], A);
+const LONG = { uid: 'Z'.repeat(200) };
+allow('F18 a uid longer than 128 characters', {}, [['rooms/JSFD', {
+  createdAt: SV, moves: '', seats: { w: LONG.uid + ':Zed' }, seen: { w: SV } }]], LONG);
+deny('F19 a nickname of 13 characters', {}, [['rooms/JSFG', {
+  createdAt: SV, moves: '', seats: { w: A.uid + ':1234567890123' }, seen: { w: SV } }]], A);
+deny('F20 a nickname containing a colon', {}, [['rooms/JSFH', {
+  createdAt: SV, moves: '', seats: { w: A.uid + ':a:b' }, seen: { w: SV } }]], A);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -100,11 +100,12 @@ As one string, none of that is reachable:
 |---|---|
 | `$code` `.write` | Writing to an existing room at all. Creation only — plus a recycle that can *only* land a fresh, empty room over one whose seats have both gone quiet, and which denies DELETE because `newData` is null there |
 | `$code` `.read` | Reading a room you are not seated in — so codes cannot be swept for nicknames or game state |
-| `seats/$c` `.write` | Taking a seat that is live, or taking any seat once moves have been played. Mid-game seat theft was the real classroom griefing vector: wait for someone to tab out, take their seat, resign for them |
-| `seats/$c` `.validate` | One uid holding both colours — checked through `newData`, i.e. **post-write**, so a single PATCH claiming both is refused |
+| `seats/$c` `.write` | Taking a seat someone is still using. A **lobby** seat frees after 5 minutes dark, a seat in a **live game** after 10. Both were 90 seconds, which is under Chrome's background-tab timer throttle — a child who tabbed to Classroom for two minutes came back to a stranger in their chair. The long mid-game window is the compromise for a student whose Chromebook was re-imaged: they can get back into their own game, but not quickly enough to be a griefing tool |
+| `seats/$c` `.validate` | One uid holding both colours — checked through `newData`, i.e. **post-write**, so a single PATCH claiming both is refused. Also caps the nickname at 12 characters and keeps `<`, `>`, `&`, `"` and colons out of it, while allowing accented and apostrophed names — José and O'Neil are students, not attacks |
 | `seats/$c` | Being one leaf means a seat cannot be partly overwritten to inherit the previous player's nickname |
 | `seen/$c` `.write` | Heartbeating a seat that is not yours; forging a timestamp |
-| `over/$c` `.write` | Writing the *other* player's claim. White can only ever write `over/w`, so "resign your opponent" is unreachable rather than merely validated against. Write-once |
+| `over/$c` `.write` | Writing the *other* player's claim — white can only ever write `over/w`, so "resign your opponent" is unreachable rather than merely validated against. Write-once, and impossible before a move exists, which stopped a stranger taking an open lobby seat and killing the game before it began |
+| `moves` `.write` | Playing on after the game is genuinely decided — a resignation, or two matching claims. An **unresolved** claim does not freeze the board: the freeze once keyed on the `over` parent existing, so a player about to lose could write their own win claim and kill the game unappealably |
 | `$other`, both levels | Any key not named above, anywhere — including the `/users` blob store that any anonymous uid could previously have filled the free tier with |
 
 What none of it stops is an illegal *chess* move; no rules language can play chess.

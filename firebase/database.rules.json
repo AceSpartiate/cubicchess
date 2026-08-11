@@ -14,14 +14,14 @@
         },
 
         "moves": {
-          ".write": "auth != null && data.isString() && newData.isString() && newData.val().beginsWith(data.val()) && newData.val().length === data.val().length + 7 && newData.val().length <= 2800 && !root.child('rooms').child($code).child('over').exists() && root.child('rooms').child($code).child('seats/w').isString() && root.child('rooms').child($code).child('seats/b').isString() && ((data.val().length % 14 === 0 && root.child('rooms').child($code).child('seats/w').val().beginsWith(auth.uid + ':')) || (data.val().length % 14 === 7 && root.child('rooms').child($code).child('seats/b').val().beginsWith(auth.uid + ':')))",
-          ".validate": "newData.isString() && newData.val().length <= 2800 && newData.val().length % 7 === 0 && newData.val().matches(/^[0-7]*$/)"
+          ".write": "auth != null && data.isString() && newData.isString() && newData.val().beginsWith(data.val()) && newData.val().length === data.val().length + 7 && newData.val().length <= 2800 && root.child('rooms').child($code).child('seats/w').isString() && root.child('rooms').child($code).child('seats/b').isString() && !(root.child('rooms').child($code).child('over/w').val() === 'b' || root.child('rooms').child($code).child('over/b').val() === 'w' || (root.child('rooms').child($code).child('over/w').exists() && root.child('rooms').child($code).child('over/w').val() === root.child('rooms').child($code).child('over/b').val())) && ((data.val().length % 14 === 0 && root.child('rooms').child($code).child('seats/w').val().beginsWith(auth.uid + ':')) || (data.val().length % 14 === 7 && root.child('rooms').child($code).child('seats/b').val().beginsWith(auth.uid + ':')))",
+          ".validate": "newData.isString() && newData.val().length <= 2800 && newData.val().length % 7 === 0 && newData.val().matches(/^[0-7]*$/) && !newData.val().contains('\\n') && !newData.val().contains('\\r')"
         },
 
         "seats": {
           "$c": {
-            ".write": "auth != null && ($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && root.child('rooms').child($code).child('moves').isString() && newData.parent().parent().child('seen').child($c).val() === now && ((data.isString() && data.val().beginsWith(auth.uid + ':')) || (root.child('rooms').child($code).child('moves').val() === '' && (!data.exists() || !root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 90000)))",
-            ".validate": "($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && newData.val().matches(/^[A-Za-z0-9_-]{1,128}:[A-Za-z0-9 _-]{1,12}$/) && (($c === 'w' && (!newData.parent().child('b').isString() || !newData.parent().child('b').val().beginsWith(auth.uid + ':'))) || ($c === 'b' && (!newData.parent().child('w').isString() || !newData.parent().child('w').val().beginsWith(auth.uid + ':'))))"
+            ".write": "auth != null && ($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && root.child('rooms').child($code).child('moves').isString() && newData.parent().parent().child('seen').child($c).val() === now && ((data.isString() && data.val().beginsWith(auth.uid + ':')) || (!data.exists() && root.child('rooms').child($code).child('moves').val() === '') || (root.child('rooms').child($code).child('moves').val() === '' && (!root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 300000)) || (!root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 600000))",
+            ".validate": "($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && newData.val().matches(/^[^:\\n\\r]+:[^:\\n\\r<>&\"\\\\]{1,12}$/) && (($c === 'w' && (!newData.parent().child('b').isString() || !newData.parent().child('b').val().beginsWith(auth.uid + ':'))) || ($c === 'b' && (!newData.parent().child('w').isString() || !newData.parent().child('w').val().beginsWith(auth.uid + ':'))))"
           }
         },
 
@@ -34,13 +34,17 @@
 
         "over": {
           "$c": {
-            ".write": "auth != null && ($c === 'w' || $c === 'b') && !data.exists() && newData.isString() && root.child('rooms').child($code).child('seats/w').isString() && root.child('rooms').child($code).child('seats/b').isString() && root.child('rooms').child($code).child('seats').child($c).val().beginsWith(auth.uid + ':')",
+            ".write": "auth != null && ($c === 'w' || $c === 'b') && !data.exists() && newData.isString() && root.child('rooms').child($code).child('seats/w').isString() && root.child('rooms').child($code).child('seats/b').isString() && root.child('rooms').child($code).child('moves').isString() && root.child('rooms').child($code).child('moves').val() !== '' && root.child('rooms').child($code).child('seats').child($c).val().beginsWith(auth.uid + ':')",
             ".validate": "($c === 'w' || $c === 'b') && newData.isString() && (newData.val() === 'w' || newData.val() === 'b' || newData.val() === 'd')"
           }
         },
 
         "$other": {
-          ".validate": false
+          ".validate": false,
+          "$o2": {
+            ".validate": false,
+            "$o3": { ".validate": false }
+          }
         }
       }
     },

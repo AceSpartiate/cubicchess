@@ -503,6 +503,7 @@
         <button id="rmJoinBtn" class="ghost">Join</button>
       </div>
       <div class="merr" id="rmErr"></div>
+      <p class="mnote" id="rmRecord" style="margin-top:12px"></p>
     </div>
 
     <div class="mstep" id="rmWait" style="display:none">
@@ -1146,7 +1147,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260811-1620";
+const BUILD="20260811-2047";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -2867,6 +2868,8 @@ async function finishOnlineGame(){
      merely forbidden. A mate names the side NOT to move as the winner; anything else
      that stops the game here is a stalemate, which is a draw. */
   const out = inCheck(turn) ? (turn==='w' ? 'b' : 'w') : 'd';
+  RM.ended = true;
+  recAdd(n, out==='d' ? 'D' : (out===GH.myColor ? 'W' : 'L'));
   try{ await rmPut('rooms/'+n+'/over/'+GH.myColor, out); }catch(e){}
 }
 
@@ -2927,13 +2930,59 @@ const RM_ALPHA = 'BCDFGHJKLMNPQRSTVWXZ';   // no vowels: no accidental words, no
 const RM_SV = {'.sv':'timestamp'};
 /* One string, matched on exactly, rather than sniffed for a prefix in two places. */
 const RM_UNREACHABLE = 'Could not reach the game server. On school wifi, ask for identitytoolkit.googleapis.com and cubic-chess-af060-default-rtdb.firebaseio.com to be allowed.';
-const RM = { tok:null, uid:null, movesStr:'', beat:null, es:null, poll:null, wait:null, mode:'' };
+const RM = { tok:null, uid:null, movesStr:'', beat:null, es:null, poll:null, wait:null, mode:'', ended:false };
 
 function rmCode(){
   let s=''; const a=new Uint8Array(4); crypto.getRandomValues(a);
   for (let i=0;i<4;i++) s += RM_ALPHA[a[i] % RM_ALPHA.length];
   return s;
 }
+/* ---------- the record ----------
+   Every finished online game appends five characters to one localStorage string: the
+   four-letter room code, then W, L or D. Counts are a scan. There is no server node,
+   no account and no sync - a record nobody else can read and nobody can verify does
+   not need any of that, and FIREBASE.md already rules out it ever touching a grade.
+
+   THE CODE IS STORED FOR ONE REASON: so a reload, a resume or a retry cannot count the
+   same game twice.
+
+   And it is compared ON CHUNK BOUNDARIES, not with indexOf. W, L and D are all letters
+   of the room alphabet, so "...KMTB" + "W" + "QRST" + "L..." contains the string "BWQR"
+   spanning two chunks. A plain indexOf would decide that game had already been recorded
+   and drop it, once in a few thousand games, for reasons nobody would ever find. */
+/* The key is spelled out at each call rather than held in a constant. check.py's
+   storage-key check reads string LITERALS, so a key reached through a variable is
+   invisible to it - and a key it cannot see is a key it cannot tell you that you
+   stopped reading. Tidier here loses the safety net. */
+const REC_MAX = 200;                          // games kept; 200 * 5 chars = 1KB
+
+function recRead(){ try{ return localStorage.getItem('cc_rec') || ''; }catch(e){ return ''; } }
+function recHas(s, code){
+  for (let i=0; i+5<=s.length; i+=5) if (s.slice(i,i+4) === code) return true;
+  return false;
+}
+function recAdd(code, r){
+  if (!code || 'WLD'.indexOf(r) < 0) return;
+  let s = recRead();
+  if (recHas(s, code)) return;
+  s += code + r;
+  if (s.length > REC_MAX*5) s = s.slice(s.length - REC_MAX*5);
+  try{ localStorage.setItem('cc_rec', s); }catch(e){}
+  recShow();
+}
+function recCounts(){
+  const s = recRead(), c = {W:0, L:0, D:0};
+  for (let i=4; i<s.length; i+=5){ const r=s[i]; if (r in c) c[r]++; }
+  return c;
+}
+function recShow(){
+  const n=$('rmRecord'); if (!n) return;
+  const c=recCounts(), total=c.W+c.L+c.D;
+  n.textContent = total
+    ? ('Your record: ' + c.W + ' won · ' + c.L + ' lost' + (c.D ? ' · ' + c.D + ' drawn' : ''))
+    : '';
+}
+
 function rmOct(v){ let s=v.toString(8); while (s.length<7) s='0'+s; return s; }
 function rmPlies(str){
   const out=[];
@@ -3019,7 +3068,7 @@ async function rmJoin(code, nick){
 /* ---------- the live game ---------- */
 async function rmStart(code, colour){
   GH.issue=code; GH.myColor=colour; GH.seen=0;
-  RM.movesStr='';
+  RM.movesStr=''; RM.ended=false;
   try{ localStorage.setItem('cc_room', JSON.stringify({code, colour})); }catch(e){}
   $('ai').value='off';
   closeModal(); closeHome();
@@ -3080,13 +3129,46 @@ async function rmResync(){
   await rmSync(true);
 }
 
+/* ---------- how a game ended ----------
+   Reading this is not optional. Watching only /moves meant a resignation was invisible:
+   the opponent's board sat waiting for a move that was never coming, forever, and the
+   game never appeared in anyone's record.
+
+   The rules make each claim author-bound and write-once, so the arithmetic is simple.
+   A claim naming YOURSELF the loser is a resignation and stands alone. Anything else
+   needs the opponent to agree, which is what two matching claims are. */
+function rmDecided(over){
+  if (!over) return null;
+  if (over.w === 'b') return 'b';                     // white resigned
+  if (over.b === 'w') return 'w';                     // black resigned
+  if (over.w && over.w === over.b) return over.w;     // both said the same thing
+  return null;                                        // an unresolved claim decides nothing
+}
+
+function rmEnded(winner){
+  if (RM.ended) return;
+  RM.ended = true;
+  if (RM.beat){ clearInterval(RM.beat); RM.beat=null; }
+  gameOver = true;
+  const mine = (winner === GH.myColor);
+  recAdd(GH.issue, winner==='d' ? 'D' : (mine ? 'W' : 'L'));
+  statusMsg = winner==='d' ? 'Drawn by agreement.'
+            : mine ? 'You win — your opponent resigned.'
+                   : 'Your opponent claimed the win.';
+  statusClass = mine ? 'win' : '';
+  refreshHUD();
+  toast(statusMsg);
+}
+
 async function rmSync(initial){
   if (GH.busy || GH.issue===null) return;
   GH.busy=true;
   try{
-    const s = await rmGet('rooms/'+GH.issue+'/moves');
-    if (s === undefined) throw new Error('lost your seat in this game');
-    rmApply(typeof s==='string' ? s : '', initial);
+    const room = await rmGet('rooms/'+GH.issue);
+    if (room === undefined || room === null) throw new Error('lost your seat in this game');
+    rmApply(typeof room.moves==='string' ? room.moves : '', initial);
+    const w = rmDecided(room.over);
+    if (w) rmEnded(w);
     GH.lastErr=null;
   }catch(e){ GH.lastErr=e.message; }
   finally{ GH.busy=false; onlineStatus(); }
@@ -3097,7 +3179,9 @@ async function rmSync(initial){
    those proxies get wrong. If neither works the player is told which host to ask for
    rather than watching a spinner. */
 function rmListen(){
-  const url = FB.db+'/rooms/'+GH.issue+'/moves.json?auth='+RM.tok;
+  /* The ROOM, not just /moves - an outcome claim is a sibling of the move list, and
+     listening only to the moves is how a resignation went unnoticed. */
+  const url = FB.db+'/rooms/'+GH.issue+'.json?auth='+RM.tok;
   let arrived = false;
   const toPolling = (why) => {
     if (RM.mode==='poll') return;
@@ -3115,8 +3199,14 @@ function rmListen(){
       arrived = true;
       try{
         const d = JSON.parse(ev.data);
-        if (d && d.path === '/') rmApply(typeof d.data==='string' ? d.data : '', false);
-        else rmSync(false);
+        if (!d){ /* nothing */ }
+        else if (d.path === '/'){                  // the whole room, on connect
+          const room = d.data || {};
+          rmApply(typeof room.moves==='string' ? room.moves : '', false);
+          const w = rmDecided(room.over); if (w) rmEnded(w);
+        }
+        else if (d.path === '/moves') rmApply(typeof d.data==='string' ? d.data : '', false);
+        else rmSync(false);                        // an outcome claim, or a seat changed
       }catch(e){ rmSync(false); }
       onlineStatus();
     });
@@ -3208,6 +3298,7 @@ function openModal(){
   }
   $('ghModal').classList.add('on');
   rmShow('rmStart');
+  recShow();
 }
 function closeModal(){ $('ghModal').classList.remove('on'); }
 /* One pane visible at a time. The GitHub panes and the room panes share the sheet, so
@@ -3485,7 +3576,8 @@ if (new URLSearchParams(location.search).has('hooks')){
                           moves:RM.movesStr, err:GH.lastErr, mode:RM.mode, uid:RM.uid}; },
     at:(x,y,z)=>{ const p=board[ID(x,y,z)]; return p?{t:p.type,c:p.color}:null; },
     legal:(x,y,z)=>legalMoves(x,y,z),
-    select, doMove, sync:()=>rmSync(false)
+    select, doMove, sync:()=>rmSync(false),
+    rec:{add:recAdd, counts:recCounts, read:recRead, has:recHas}
   };
 }
 

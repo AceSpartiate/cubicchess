@@ -123,7 +123,8 @@ real database. `tools/check.py` check 8 now refuses each of them by name.
 | a `"` or `\` inside a regex literal | rejected: *Illegal regular expression* |
 | `newData.parent().parent()` reading a sibling leg | honoured when the sibling exists, **not** when it is being created, so nobody could join a game |
 | `[^:
-]` in a character class | parsed as the **letters n and r** — every Aaron, Brian and Erin silently refused |
+
+]` in a character class | parsed as the **letters n and r** — every Aaron, Brian and Erin silently refused |
 
 The last two are the dangerous kind: the file publishes cleanly and the game is simply
 broken for some people. Neither is findable by reading, and neither is findable in the
@@ -231,7 +232,18 @@ rather than a surprise invoice — the right failure mode for a classroom.
 - 1 GB stored, 10 GB/month down. A game is a few hundred bytes; a school year of play
   is single-digit megabytes. You will not approach these.
 
-## The one thing that could still break at school
+## Tested at school, 11 Aug 2026 — it works
+
+A game was played on a **school Chromebook on the school wifi**. That settles the one
+domain this design could not test from anywhere else: `*.firebasedatabase.app` is not
+filtered, and neither are the two `googleapis.com` auth hosts. Nothing here needs an
+IT ticket.
+
+Keep this note. If online play ever stops working at school, it is a CHANGE to the
+filter, not a thing that was never tried - and that is a different conversation with
+IT than "please allow this".
+
+## The section this replaced, kept for the domain names
 
 `*.firebasedatabase.app` is the single genuinely untested domain in this design. The
 auth hosts (`identitytoolkit.googleapis.com`, `securetoken.googleapis.com`) sit under

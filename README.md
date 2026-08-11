@@ -119,6 +119,10 @@ digits per ply, because 8⁷ is exactly 2²¹ and `encodeMove()` already yields 
 Moves arrive over Server-Sent Events, with a 3-second poll as the fallback: SSE is
 ordinary HTTPS on 443, and a WebSocket upgrade is the part school proxies get wrong.
 
+Finished games are counted in the browser: five characters each, the room code plus
+W, L or D, shown on the online panel. No account, no server node, nothing anyone else
+can read. The code is stored so that a reload cannot count a game twice.
+
 **With no connection the button reads "Offline Play Only"** and says so plainly.
 Practice, Competitive and Coach need no network at all — three of the four modes
 keep working, and the game does not pretend otherwise.

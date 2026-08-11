@@ -32,6 +32,33 @@ function rd(want, root, path, auth, name) {
   if (got === want) pass++; else { fail++; console.log(`FAIL [read ${want}] ${name} -> ${got}`); }
 }
 
+
+/* Taking a seat is TWO writes: claim it, then start its clock.
+ *
+ * It used to be one atomic PATCH carrying both, and that relied on one leg of a
+ * multi-path write being visible to the other leg's rule. The live engine does honour
+ * that when the sibling already exists - an atomic rename passes - but not when the
+ * sibling is being CREATED, which is exactly the join case, so no one could ever join.
+ * Rather than depend on a semantic that is undocumented and that the simulator and the
+ * real thing disagree on, no rule reads a sibling leg any more: seats/$c stands alone
+ * and seen/$c reads the seat from PRE-write state. Both are ordinary single-path
+ * writes, which is the one shape both engines certainly agree on.
+ *
+ * The gap between the two writes leaves a seat with no clock for a moment, which reads
+ * as "dark" and so as reclaimable. That is harmless - the claimer writes the clock
+ * immediately - and it is the price of not building on a semantic nobody can cite. */
+function seat(root, code, c, auth, nick, now = T) {
+  const r1 = request(root, [[`rooms/${code}/seats/${c}`, auth.uid + ':' + nick]], auth, now);
+  if (!r1.ok) return r1;
+  return request(r1.root, [[`rooms/${code}/seen/${c}`, SV]], auth, now);
+}
+function allowSeat(name, root, code, c, auth, nick, now = T) {
+  return ck(true, seat(root, code, c, auth, nick, now), name);
+}
+function denySeat(name, root, code, c, auth, nick, now = T) {
+  return ck(false, seat(root, code, c, auth, nick, now), name);
+}
+
 // ---------------------------------------------------------------- honest play
 let r = {};
 r = allow('H1 create room, white', r, [['rooms/KMTB', {
@@ -44,10 +71,12 @@ rd(false, r, 'rooms/KMTB/moves', C, 'stranger reads moves');
 rd(false, r, 'rooms', A, 'anyone lists rooms');
 rd(false, r, 'rooms/KMTB', NOAUTH, 'unauth reads room');
 
-r = allow('H2 join as black (PATCH seat+seen)', r, [
-  ['rooms/KMTB/seats/b', B.uid + ':Mira'],
-  ['rooms/KMTB/seen/b', SV]
-], B, T + 5000).root;
+r = allow('H2a join as black, claim the seat', r,
+  [['rooms/KMTB/seats/b', B.uid + ':Mira']], B, T + 5000).root;
+r = allow('H2b join as black, start the heartbeat', r,
+  [['rooms/KMTB/seen/b', SV]], B, T + 5001).root;
+deny('H2c a heartbeat for a seat you do not hold', r,
+  [['rooms/KMTB/seen/b', SV]], C, T + 5002);
 
 r = allow('H3 heartbeat white', r, [['rooms/KMTB/seen/w', SV]], A, T + 20000).root;
 r = allow('H4 heartbeat black', r, [['rooms/KMTB/seen/b', SV]], B, T + 21000).root;
@@ -68,7 +97,7 @@ rd(true, r, 'rooms/KMTB/moves', B, 'seated player reads moves');
 // a full 400-ply game runs to the cap and stops
 let g = {};
 g = request(g, [['rooms/QRST', { createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, T).root;
-g = request(g, [['rooms/QRST/seats/b', B.uid + ':Mira'], ['rooms/QRST/seen/b', SV]], B, T).root;
+g = seat(g, 'QRST', 'b', B, 'Mira', T).root;
 let s = '';
 let capOk = true;
 for (let i = 0; i < 400; i++) {
@@ -97,13 +126,11 @@ allow('H15 create room, creator takes black', {}, [['rooms/PLDN', {
 
 // reclaim a dark seat in a lobby that never started
 let lob = request({}, [['rooms/HJKL', { createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, T).root;
-lob = request(lob, [['rooms/HJKL/seats/b', B.uid + ':Mira'], ['rooms/HJKL/seen/b', SV]], B, T).root;
+lob = seat(lob, 'HJKL', 'b', B, 'Mira', T).root;
 deny('H16 a lobby seat dark only 91s is NOT reclaimable', lob, [
   ['rooms/HJKL/seats/b', C.uid + ':Rae'], ['rooms/HJKL/seen/b', SV]
 ], C, T + 95000);
-allow('H16b a lobby seat dark 6 minutes is reclaimable', lob, [
-  ['rooms/HJKL/seats/b', C.uid + ':Rae'], ['rooms/HJKL/seen/b', SV]
-], C, T + 360000);
+allowSeat('H16b a lobby seat dark 6 minutes is reclaimable', lob, 'HJKL', 'b', C, 'Rae', T + 360000);
 
 // recycle
 const stale = T + 700000;
@@ -151,7 +178,7 @@ deny('A14 one uid takes both seats at creation (PATCH legs)', {}, [
 ], C);
 // two dark seats grabbed atomically
 let dark = request({}, [['rooms/MNPQ', { createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, T).root;
-dark = request(dark, [['rooms/MNPQ/seats/b', B.uid + ':Mira'], ['rooms/MNPQ/seen/b', SV]], B, T).root;
+dark = seat(dark, 'MNPQ', 'b', B, 'Mira', T).root;
 deny('A15 one uid grabs two stale seats in one PATCH', dark, [
   ['rooms/MNPQ/seats/w', C.uid + ':E1'], ['rooms/MNPQ/seen/w', SV],
   ['rooms/MNPQ/seats/b', C.uid + ':E2'], ['rooms/MNPQ/seen/b', SV]
@@ -226,7 +253,7 @@ deny('A55 blob under /users', {}, [['users/' + C.uid + '/junk', 'x'.repeat(1000)
 deny('A56 write a top-level junk path', {}, [['junk', { a: 1 }]], C);
 deny('A57 write the database root', {}, [['', { rooms: {} }]], C);
 deny('A58 move where black never joined', solo, [['rooms/ZKMB/moves', oct(1)]], A, T + 1000);
-deny('A59 lone seat write with no fresh clock, own seat, mid-game', r, [['rooms/KMTB/seats/w', A.uid + ':Zed']], A, NOWX);
+allow('A59 rewriting your OWN seat needs no clock in the same write', r, [['rooms/KMTB/seats/w', A.uid + ':Zed']], A, NOWX);
 deny('A60 nickname longer than 12 characters', {}, [['rooms/VWXZ', { createdAt: SV, moves: '', seats: { w: C.uid + ':ThirteenChars' }, seen: { w: SV } }]], C);
 deny('A61 seat string with no colon', {}, [['rooms/VWXZ', { createdAt: SV, moves: '', seats: { w: C.uid }, seen: { w: SV } }]], C);
 deny('A62 seen written for a seat that does not exist', solo, [['rooms/ZKMB/seen/b', SV]], C, T + 1000);
@@ -249,7 +276,7 @@ allow('H20 recycle a lobby dark 11 minutes', solo, [['rooms/ZKMB', { createdAt: 
 function game(now = T) {
   let x = request({}, [['rooms/KMTB', {
     createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, now).root;
-  x = request(x, [['rooms/KMTB/seats/b', B.uid + ':Mira'], ['rooms/KMTB/seen/b', SV]], B, now).root;
+  x = seat(x, 'KMTB', 'b', B, 'Mira', now).root;
   x = request(x, [['rooms/KMTB/moves', oct(1)]], A, now).root;
   x = request(x, [['rooms/KMTB/moves', oct(1) + oct(2)]], B, now).root;
   return x;
@@ -278,7 +305,7 @@ deny('F7 nobody plays on after an agreed draw', f3,
 // pinning the code. An outcome cannot exist before a move does.
 let pre = request({}, [['rooms/PLKN', {
   createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, T).root;
-pre = request(pre, [['rooms/PLKN/seats/b', C.uid + ':Eve'], ['rooms/PLKN/seen/b', SV]], C, T).root;
+pre = seat(pre, 'PLKN', 'b', C, 'Eve', T).root;
 deny('F8 an outcome claimed before any move exists', pre, [['rooms/PLKN/over/b', 'w']], C);
 
 // F0. $other/.validate:false only guards depth 1 - .validate never runs on an ancestor
@@ -296,19 +323,15 @@ deny('F10 blob three levels deep at create time', {}, [
 // who tabs to Classroom for two minutes came back to a stranger in their seat.
 let pre2 = request({}, [['rooms/TRKN', {
   createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A, T).root;
-deny('F11 take a lobby seat dark only 2 minutes', pre2,
-  [['rooms/TRKN/seats/w', C.uid + ':Eve'], ['rooms/TRKN/seen/w', SV]], C, T + 120000);
-allow('F12 take a lobby seat dark 6 minutes', pre2,
-  [['rooms/TRKN/seats/w', C.uid + ':Eve'], ['rooms/TRKN/seen/w', SV]], C, T + 360000);
+denySeat('F11 take a lobby seat dark only 2 minutes', pre2, 'TRKN', 'w', C, 'Eve', T + 120000);
+allowSeat('F12 take a lobby seat dark 6 minutes', pre2, 'TRKN', 'w', C, 'Eve', T + 360000);
 
 // F6/F13. A seat welded to one anonymous uid forever orphans a student whose Chromebook
 // was re-imaged or whose site data was cleared. Reclaim mid-game, but only after long
 // enough that it is not a griefing window.
 let mid = game();
-deny('F13 take a mid-game seat dark 2 minutes', mid,
-  [['rooms/KMTB/seats/b', C.uid + ':Eve'], ['rooms/KMTB/seen/b', SV]], C, T + 120000);
-allow('F14 rejoin a mid-game seat dark 11 minutes', mid,
-  [['rooms/KMTB/seats/b', C.uid + ':Eve'], ['rooms/KMTB/seen/b', SV]], C, T + 660000);
+denySeat('F13 take a mid-game seat dark 2 minutes', mid, 'KMTB', 'b', C, 'Eve', T + 120000);
+allowSeat('F14 rejoin a mid-game seat dark 11 minutes', mid, 'KMTB', 'b', C, 'Eve', T + 660000);
 
 // F7/F20. If matches() is Java-flavoured, `$` sits before a final line terminator, so a
 // newline slips into the alphabet check - and moves re-validates the WHOLE string every

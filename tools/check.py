@@ -225,6 +225,16 @@ else:
                 if '\\\\' in lit:
                     errs.append('%s has an escaped backslash inside the regex %s - the '
                                 'rules parser rejects it' % (where, lit))
+            # Fourth failure class, and the most expensive to find. A rule that reads a
+            # SIBLING LEG of the same multi-path write - newData.parent().parent()... -
+            # is honoured by the live engine when the sibling already exists and NOT
+            # when it is being created. The simulator allowed both, so the offline suite
+            # was green on a rule set in which nobody could join a game. Read pre-write
+            # state through `root` and let each write stand on its own instead.
+            if '.parent().parent()' in expr:
+                errs.append("%s reads across a multi-path write with .parent().parent() - "
+                            "the live engine and the simulator disagree on that; use root "
+                            "for pre-write state and keep each write self-contained" % where)
             for meth in set(re.findall(r'\.([A-Za-z_][A-Za-z0-9_]*)\s*\(', expr)):
                 if meth in SNAP_METHODS:
                     continue

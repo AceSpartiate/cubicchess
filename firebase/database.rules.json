@@ -2,53 +2,46 @@
   "rules": {
     ".read": false,
     ".write": false,
-
     "rooms": {
       "$code": {
         ".read": "auth != null && ((data.child('seats/w').isString() && data.child('seats/w').val().beginsWith(auth.uid + ':')) || (data.child('seats/b').isString() && data.child('seats/b').val().beginsWith(auth.uid + ':')))",
-
         ".write": "auth != null && $code.matches(/^[BCDFGHJKLMNPQRSTVWXZ]{4}$/) && newData.child('createdAt').val() === now && newData.child('moves').val() === '' && !newData.hasChild('over') && ((newData.child('seats/w').isString() && newData.child('seats/w').val().beginsWith(auth.uid + ':') && newData.child('seen/w').val() === now && !newData.hasChild('seats/b') && !newData.hasChild('seen/b')) || (newData.child('seats/b').isString() && newData.child('seats/b').val().beginsWith(auth.uid + ':') && newData.child('seen/b').val() === now && !newData.hasChild('seats/w') && !newData.hasChild('seen/w'))) && (!data.exists() || ((!data.child('seen/w').isNumber() || data.child('seen/w').val() < now - 600000) && (!data.child('seen/b').isNumber() || data.child('seen/b').val() < now - 600000) && (data.child('moves').val() === '' || ((!data.child('seen/w').isNumber() || data.child('seen/w').val() < now - 86400000) && (!data.child('seen/b').isNumber() || data.child('seen/b').val() < now - 86400000)))))",
-
         "createdAt": {
           ".validate": "newData.isNumber() && newData.val() === now"
         },
-
         "moves": {
           ".write": "auth != null && data.isString() && newData.isString() && newData.val().beginsWith(data.val()) && newData.val().length === data.val().length + 7 && newData.val().length <= 2800 && root.child('rooms').child($code).child('seats/w').isString() && root.child('rooms').child($code).child('seats/b').isString() && !(root.child('rooms').child($code).child('over/w').val() === 'b' || root.child('rooms').child($code).child('over/b').val() === 'w' || (root.child('rooms').child($code).child('over/w').exists() && root.child('rooms').child($code).child('over/w').val() === root.child('rooms').child($code).child('over/b').val())) && ((data.val().length % 14 === 0 && root.child('rooms').child($code).child('seats/w').val().beginsWith(auth.uid + ':')) || (data.val().length % 14 === 7 && root.child('rooms').child($code).child('seats/b').val().beginsWith(auth.uid + ':')))",
           ".validate": "newData.isString() && newData.val().length <= 2800 && newData.val().length % 7 === 0 && newData.val().matches(/^[0-7]*$/) && !newData.val().contains('\\n') && !newData.val().contains('\\r')"
         },
-
         "seats": {
           "$c": {
-            ".write": "auth != null && ($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && root.child('rooms').child($code).child('moves').isString() && newData.parent().parent().child('seen').child($c).val() === now && ((data.isString() && data.val().beginsWith(auth.uid + ':')) || (!data.exists() && root.child('rooms').child($code).child('moves').val() === '') || (root.child('rooms').child($code).child('moves').val() === '' && (!root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 300000)) || (!root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 600000))",
+            ".write": "auth != null && ($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && root.child('rooms').child($code).child('moves').isString() && ((data.isString() && data.val().beginsWith(auth.uid + ':')) || (!data.exists() && root.child('rooms').child($code).child('moves').val() === '') || (root.child('rooms').child($code).child('moves').val() === '' && (!root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 300000)) || (!root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 600000))",
             ".validate": "($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && newData.val().matches(/^[^:\\n\\r]+:[^:\\n\\r<>&]{1,12}$/) && (($c === 'w' && (!newData.parent().child('b').isString() || !newData.parent().child('b').val().beginsWith(auth.uid + ':'))) || ($c === 'b' && (!newData.parent().child('w').isString() || !newData.parent().child('w').val().beginsWith(auth.uid + ':'))))"
           }
         },
-
         "seen": {
           "$c": {
-            ".write": "auth != null && ($c === 'w' || $c === 'b') && newData.val() === now && newData.parent().parent().child('seats').child($c).isString() && newData.parent().parent().child('seats').child($c).val().beginsWith(auth.uid + ':')",
+            ".write": "auth != null && ($c === 'w' || $c === 'b') && newData.val() === now && root.child('rooms').child($code).child('seats').child($c).isString() && root.child('rooms').child($code).child('seats').child($c).val().beginsWith(auth.uid + ':')",
             ".validate": "($c === 'w' || $c === 'b') && newData.isNumber() && newData.val() === now"
           }
         },
-
         "over": {
           "$c": {
             ".write": "auth != null && ($c === 'w' || $c === 'b') && !data.exists() && newData.isString() && root.child('rooms').child($code).child('seats/w').isString() && root.child('rooms').child($code).child('seats/b').isString() && root.child('rooms').child($code).child('moves').isString() && root.child('rooms').child($code).child('moves').val() !== '' && root.child('rooms').child($code).child('seats').child($c).val().beginsWith(auth.uid + ':')",
             ".validate": "($c === 'w' || $c === 'b') && newData.isString() && (newData.val() === 'w' || newData.val() === 'b' || newData.val() === 'd')"
           }
         },
-
         "$other": {
           ".validate": false,
           "$o2": {
             ".validate": false,
-            "$o3": { ".validate": false }
+            "$o3": {
+              ".validate": false
+            }
           }
         }
       }
     },
-
     "$other": {
       ".read": false,
       ".write": false,

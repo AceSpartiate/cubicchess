@@ -94,8 +94,6 @@ else:
 # another thing a school filter can block and another party the game depends on - so it
 # fails here until it is written down rather than passing because it looked plausible.
 ALLOWED_HOSTS = {
-    "api.github.com":
-        "the old online mode, pending removal",
     "identitytoolkit.googleapis.com":
         "anonymous sign-in; under googleapis.com, which a Workspace district cannot "
         "block without breaking its own Chromebooks",

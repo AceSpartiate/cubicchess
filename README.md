@@ -13,7 +13,7 @@ engine, an AI opponent, 11 themes, and 140 engine-verified puzzles.
 |------|------------|
 | `index.html` | The entire game — markup, styles, engine, and all puzzle data. |
 | `three.min.js` | three.js r128, vendored. See below. |
-| `tools/check.py` | Eight pre-flight checks. Run before committing; the hook runs it for you. |
+| `tools/check.py` | Ten pre-flight checks. Run before committing; the hook runs it for you. |
 | `tools/validate.js` | Gates perft and replays all 140 puzzles. Called by `check.py`. |
 | `tools/test-rules.mjs` | 95 cases against the database rules. Offline. Called by `check.py`. |
 | `tools/sim.mjs` | A Realtime Database rules evaluator that does multi-path writes properly. |

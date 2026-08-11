@@ -210,6 +210,21 @@ else:
             "matches",
         }
         def lint_expr(expr, where):
+            # Third failure class. A regex literal that is perfectly valid JavaScript can
+            # still be refused by the rules parser: a character class containing a double
+            # quote or an escaped backslash was rejected with
+            #   Line 24: Illegal regular expression, expected ']'
+            # after the file had been handed over as ready to paste. Neither character is
+            # usually load-bearing - excluding < > & already stops markup - so the lint
+            # says so rather than letting the console say it to whoever is pasting.
+            for lit in re.findall(r'/(?:[^/\\\n]|\\.)+/', expr):
+                if '"' in lit:
+                    errs.append('%s has a double quote inside the regex %s - the rules '
+                                'parser rejects it; drop it or match on what it guards'
+                                % (where, lit))
+                if '\\\\' in lit:
+                    errs.append('%s has an escaped backslash inside the regex %s - the '
+                                'rules parser rejects it' % (where, lit))
             for meth in set(re.findall(r'\.([A-Za-z_][A-Za-z0-9_]*)\s*\(', expr)):
                 if meth in SNAP_METHODS:
                     continue

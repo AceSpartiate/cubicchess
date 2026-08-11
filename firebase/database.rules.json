@@ -21,7 +21,7 @@
         "seats": {
           "$c": {
             ".write": "auth != null && ($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && root.child('rooms').child($code).child('moves').isString() && newData.parent().parent().child('seen').child($c).val() === now && ((data.isString() && data.val().beginsWith(auth.uid + ':')) || (!data.exists() && root.child('rooms').child($code).child('moves').val() === '') || (root.child('rooms').child($code).child('moves').val() === '' && (!root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 300000)) || (!root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 600000))",
-            ".validate": "($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && newData.val().matches(/^[^:\\n\\r]+:[^:\\n\\r<>&\"\\\\]{1,12}$/) && (($c === 'w' && (!newData.parent().child('b').isString() || !newData.parent().child('b').val().beginsWith(auth.uid + ':'))) || ($c === 'b' && (!newData.parent().child('w').isString() || !newData.parent().child('w').val().beginsWith(auth.uid + ':'))))"
+            ".validate": "($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && newData.val().matches(/^[^:\\n\\r]+:[^:\\n\\r<>&]{1,12}$/) && (($c === 'w' && (!newData.parent().child('b').isString() || !newData.parent().child('b').val().beginsWith(auth.uid + ':'))) || ($c === 'b' && (!newData.parent().child('w').isString() || !newData.parent().child('w').val().beginsWith(auth.uid + ':'))))"
           }
         },
 

@@ -218,6 +218,18 @@ else:
             # usually load-bearing - excluding < > & already stops markup - so the lint
             # says so rather than letting the console say it to whoever is pasting.
             for lit in re.findall(r'/(?:[^/\\\n]|\\.)+/', expr):
+                # Fifth failure class, and the quietest. The rules parser reads \n, \r
+                # and \t inside a character class as the LETTERS n, r and t. A class
+                # written [^:\n\r] to exclude newlines silently excluded every name
+                # containing a lowercase n or r - Aaron, Brian, Erin, Ryan - and the
+                # child just got a permission error with no explanation. The console
+                # accepts it happily; only a live write shows it.
+                for esc, ch in (('\\n', 'n'), ('\\r', 'r'), ('\\t', 't')):
+                    if esc in lit:
+                        errs.append("%s has %s inside the regex %s - the rules parser "
+                                    "reads it as the letter '%s', so that letter is "
+                                    "silently banned; drop the escape"
+                                    % (where, esc, lit, ch))
                 if '"' in lit:
                     errs.append('%s has a double quote inside the regex %s - the rules '
                                 'parser rejects it; drop it or match on what it guards'

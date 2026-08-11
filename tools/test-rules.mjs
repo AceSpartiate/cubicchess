@@ -341,6 +341,10 @@ deny('F15 a newline inside the move string', game(),
 
 // F14/F15. The nickname charset rejected accented names - a real set of students here -
 // and the uid half of that regex could only ever produce false rejections.
+allow('F16a a nickname containing n and r', {}, [['rooms/JSFT', {
+  createdAt: SV, moves: '', seats: { w: A.uid + ':Fran' }, seen: { w: SV } }]], A);
+allow('F16b every vowel-free name a child might have', {}, [['rooms/JSFV', {
+  createdAt: SV, moves: '', seats: { w: A.uid + ':Aaron' }, seen: { w: SV } }]], A);
 allow('F16 an accented nickname', {}, [['rooms/JSFB', {
   createdAt: SV, moves: '', seats: { w: A.uid + ':José' }, seen: { w: SV } }]], A);
 allow('F17 a nickname with an apostrophe', {}, [['rooms/JSFC', {

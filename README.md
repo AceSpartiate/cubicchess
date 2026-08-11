@@ -15,9 +15,13 @@ engine, an AI opponent, 11 themes, and 140 engine-verified puzzles.
 | `three.min.js` | three.js r128, vendored. See below. |
 | `tools/check.py` | Ten pre-flight checks. Run before committing; the hook runs it for you. |
 | `tools/validate.js` | Gates perft and replays all 140 puzzles. Called by `check.py`. |
-| `tools/test-rules.mjs` | 95 cases against the database rules. Offline. Called by `check.py`. |
+| `tools/test-rules.mjs` | 120 cases against the database rules. Offline. Called by `check.py`. |
+| `tools/calibrate-sim.mjs` | Pins the evaluator to verdicts recorded from the live project. |
+| `tools/test-rules-live.py` | The same ground against the real database. Run after publishing rules. |
 | `tools/sim.mjs` | A Realtime Database rules evaluator that does multi-path writes properly. |
 | `tools/stamp.py` | Writes the build id into `index.html` and `version.txt` together. |
+| `firebase/` | The database rules and the project config. |
+| `FIREBASE.md` | Setting the backend up, and the five console traps found the hard way. |
 | `ARCHITECTURE.md` | Coordinate system, movement rules, engine API, rendering, file layout. |
 | `PUZZLES.md` | How Coach mode and the puzzle generator work, and how the puzzles were produced. |
 | `MAINTENANCE.md` | How to change the file without breaking it: the validation harness and regression checks. |
@@ -37,8 +41,8 @@ so opening `index.html` directly will silently fail to save Coach progress and
 settings — and you will spend an afternoon chasing a bug that is not there.
 
 It needs WebGL. Rendering, Practice, Competitive, the AI and all 140 puzzles need **no network at
-all** — that is what vendoring three.js bought. The one exception is the online mode, which still
-calls `api.github.com`; see below, it is being replaced.
+all** — that is what vendoring three.js bought. Only online play reaches out, and when it cannot,
+the game says **Offline Play Only** and the other three modes carry on.
 
 ## Check before committing
 

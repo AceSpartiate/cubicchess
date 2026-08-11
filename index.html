@@ -191,23 +191,6 @@
   .modal button.ghost{border-color:var(--line);color:var(--dim)}
   .modal button.ghost:hover{border-color:var(--mint);color:var(--mint)}
   .modal button.small{flex:0 0 auto;padding:6px 12px;font-size:9.5px}
-  .mhelp{display:none;margin-top:12px;border-top:1px solid var(--line);padding-top:10px}
-  .mhelp.on{display:block}
-  .mhelp ol{margin:0;padding-left:18px;font-size:10.5px;line-height:1.7;color:var(--dim)}
-  .mhelp code{color:var(--amber);font-size:10px}
-  .mhelp b{color:var(--ink)}
-  .merr{color:var(--blood);font-size:10.5px;margin-top:10px;min-height:14px;line-height:1.5}
-  .lhead{display:flex;gap:7px;align-items:center;margin-bottom:12px}
-  .lhead #ghWho{flex:1;font-size:10.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .glist{display:flex;flex-direction:column;gap:6px;min-height:40px}
-  .gitem{border:1px solid var(--line);padding:9px 10px;cursor:pointer;transition:.14s;
-    display:flex;justify-content:space-between;align-items:center;gap:8px}
-  .gitem:hover{border-color:var(--mint)}
-  .gitem .t{font-size:11px;color:var(--ink)}
-  .gitem .s{font-size:9px;letter-spacing:.05em;color:var(--dim);text-transform:uppercase}
-  .gitem .s.you{color:var(--amber)}
-  .gitem .s.win{color:var(--mint)}
-  .gempty{font-size:10.5px;color:var(--dim);text-align:center;padding:14px 0}
 
   .cctoast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(8px);
     background:rgba(12,19,34,.97);border:1px solid var(--mint);color:var(--ink);
@@ -262,8 +245,9 @@
   .setrow select{width:130px}
   .setrow input[type=range]{width:130px;accent-color:var(--mint)}
   .setrow input[type=checkbox]{accent-color:var(--mint);width:16px;height:16px}
-  .mode.online{border-style:dashed}
-  .mode.online:hover{border-style:solid}
+  /* Was dashed while online play was provisional. It is the shipped path now. */
+  .mode.online.isoff{opacity:.55;border-style:dashed;cursor:not-allowed}
+  .mode.online.isoff .mt{color:var(--dim)}
   #homeOnlineState{font-size:11px;font-weight:300;letter-spacing:.06em;color:var(--mint);text-transform:none}
   /* ===== Coach mode ===== */
   .coach{position:fixed;inset:0;z-index:110;display:none;
@@ -355,8 +339,8 @@
         <span class="md">Learn cubic-chess strategy through 90 guided puzzles across 9 topics</span>
       </button>
       <button class="mode online" id="modeOnline">
-        <span class="mt">Play online <span id="homeOnlineState"></span></span>
-        <span class="md">Trade turns with someone through a private GitHub repo</span>
+        <span class="mt"><span id="modeOnlineLabel">Play online</span> <span id="homeOnlineState"></span></span>
+        <span class="md" id="modeOnlineSub">Play someone with a four-letter code</span>
       </button>
     </div>
   </div>
@@ -505,38 +489,6 @@
   <div class="sheet">
     <div class="mhead"><b>Play online</b><span class="x" id="ghClose">esc</span></div>
 
-    <div class="mstep" id="ghConnect">
-      <p class="mnote">Games are stored as issues in a private GitHub repo. Everyone who plays needs a GitHub account, collaborator access to the repo, and a fine-grained token. Your token stays in this browser only.</p>
-      <label>Repository <span class="dim">owner/name</span></label>
-      <input id="ghRepo" placeholder="yourname/cubic-chess" autocomplete="off" spellcheck="false">
-      <label>Access token <span class="dim">fine-grained, Issues read+write</span></label>
-      <input id="ghToken" type="password" placeholder="github_pat_..." autocomplete="off" spellcheck="false">
-      <div class="mbtns">
-        <button id="ghConnectBtn">Connect</button>
-        <button id="ghHelpBtn" class="ghost">How do I get these?</button>
-      </div>
-      <div class="mhelp" id="ghHelp">
-        <ol>
-          <li>Create a <b>private</b> repo, e.g. <code>cubic-chess</code>.</li>
-          <li>Invite opponents: repo <b>Settings → Collaborators</b>.</li>
-          <li>Make a token: <b>github.com/settings/tokens</b> → Fine-grained → pick that one repo → Repository permissions → <b>Issues: Read and write</b>.</li>
-          <li>Paste <code>owner/name</code> and the token above. Each player does this once.</li>
-        </ol>
-      </div>
-      <div class="merr" id="ghErr"></div>
-    </div>
-
-    <div class="mstep" id="ghLobby" style="display:none">
-      <div class="lhead">
-        <span id="ghWho" class="dim"></span>
-        <button id="ghNew" class="small">New game</button>
-        <button id="ghRefresh" class="small ghost">Refresh</button>
-      </div>
-      <div id="ghList" class="glist"></div>
-      <button id="ghDisconnect" class="ghost small" style="margin-top:10px">Disconnect</button>
-    </div>
-
-    <!-- The room-code panes. Reached only under ?rooms until the default flips. -->
     <div class="mstep" id="rmStart" style="display:none">
       <p class="mnote">Pick a name, then either start a game and read the code out, or type the code someone read to you.</p>
       <label>Your name <span class="dim">up to 12 letters</span></label>
@@ -1194,7 +1146,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260811-1602";
+const BUILD="20260811-1620";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -2521,24 +2473,13 @@ function doMove(tx,ty,tz,promo){
 }
 async function postMyMove(mv){
   onlineStatus();
-  if (NET==='rooms'){
-    if (await rmSend(mv)) return;
-    /* The move genuinely did not land. The board has already drawn it, so leaving it
-       there would put the player a move ahead of the game for the rest of the game -
-       which is what the branch below used to do, silently, while its comment claimed a
-       retry that nothing performed. Rebuild from what the server actually has. */
-    toast('Your move did not reach the other player — putting the board back.');
-    await rmResync();
-    return;
-  }
-  try{
-    await ghPostMove(mv);
-  }catch(e){
-    toast('Move not sent: '+e.message+' — it will retry.');
-    // roll our optimistic counter back so the next poll re-sends state truthfully
-    GH.seen = Math.max(0, GH.seen-1);
-    // re-post on next sync by leaving history; a poll will reconcile
-  }
+  if (await rmSend(mv)) return;
+  /* The move genuinely did not land. The board has already drawn it, so leaving it
+     there would put the player a move ahead of the game for the rest of the game -
+     which is what the GitHub transport did, silently, while its comment claimed a
+     retry that nothing performed. Rebuild from what the server actually has. */
+  toast('Your move did not reach the other player — putting the board back.');
+  await rmResync();
 }
 
 function pick(ev){
@@ -2912,151 +2853,21 @@ function decodeMove(v){
   const f=(v>>>12)&511, t=(v>>>3)&511;
   return {fx:f&7, fy:(f>>3)&7, fz:f>>6, tx:t&7, ty:(t>>3)&7, tz:t>>6, promo:PROMO_FROM[v&7]};
 }
-// a move comment is just the number in base36, easy to eyeball in the issue thread
-function moveToComment(m){ return 'm:' + encodeMove(m).toString(36); }
-function commentToMove(body){
-  const s=(body||'').trim();
-  if (s.slice(0,2)!=='m:') return null;
-  const v=parseInt(s.slice(2),36);
-  return isNaN(v)?null:decodeMove(v);
-}
-
-async function ghFetch(path, opts){
-  opts = opts||{};
-  const res = await fetch('https://api.github.com'+path, {
-    method: opts.method||'GET',
-    headers: {
-      'Authorization':'Bearer '+GH.token,
-      'Accept':'application/vnd.github+json',
-      'X-GitHub-Api-Version':'2022-11-28',
-      ...(opts.body?{'Content-Type':'application/json'}:{})
-    },
-    body: opts.body?JSON.stringify(opts.body):undefined
-  });
-  if (res.status===401 || res.status===403){
-    const j=await res.json().catch(()=>({}));
-    throw new Error(res.status===401 ? 'Token rejected — check it has Issues access to this repo.'
-                                     : (j.message||'Access forbidden — is the repo private and the token scoped to it?'));
-  }
-  if (res.status===404) throw new Error('Not found — check the repo name is exactly owner/name.');
-  if (!res.ok){ const j=await res.json().catch(()=>({})); throw new Error(j.message||('GitHub error '+res.status)); }
-  return res.status===204 ? null : res.json();
-}
-
-async function ghConnect(repo, token){
-  GH.repo=repo; GH.token=token;
-  const who = await ghFetch('/user');          // validates the token
-  GH.me = who.login;
-  await ghFetch('/repos/'+repo);               // validates repo access
-  try{ localStorage.setItem('cc_gh', JSON.stringify({repo, token})); }catch(e){}
-}
-function ghDisconnect(){
-  stopOnlineGame();
-  GH.token=GH.repo=GH.me=null;
-  try{ localStorage.removeItem('cc_gh'); }catch(e){}
-}
-
-async function ghListGames(){
-  const issues = await ghFetch('/repos/'+GH.repo+'/issues?labels=cubic-chess&state=all&per_page=30');
-  return issues.map(parseGameIssue).filter(Boolean);
-}
-function parseGameIssue(issue){
-  const mMeta = /<!--cc:(.*?)-->/.exec(issue.body||'');
-  if (!mMeta) return null;
-  let meta; try{ meta=JSON.parse(mMeta[1]); }catch(e){ return null; }
-  return {number:issue.number, title:issue.title, state:issue.state,
-          white:meta.w||null, black:meta.b||null, open:meta.open||null,
-          updated:issue.updated_at};
-}
-
-async function ghCreateGame(color){
-  const meta = { open: GH.me };
-  meta[color==='w'?'w':'b'] = GH.me;
-  const body = 'Cubic chess game. Moves are comments below.\n\n<!--cc:'+JSON.stringify(meta)+'-->';
-  const issue = await ghFetch('/repos/'+GH.repo+'/issues', {method:'POST',
-    body:{ title:'Cubic Chess · '+GH.me+' ('+(color==='w'?'White':'Black')+')', labels:['cubic-chess'], body }});
-  return parseGameIssue(issue);
-}
-
-async function ghJoinGame(g){
-  // Re-read the issue so the seat decision is against current state, not a stale list entry.
-  const fresh = parseGameIssue(await ghFetch('/repos/'+GH.repo+'/issues/'+g.number));
-  if (!fresh) throw new Error('That issue is not a cubic-chess game.');
-  let color = fresh.white===GH.me ? 'w' : fresh.black===GH.me ? 'b' : null;
-  if (color) return color;                              // already seated, just resume
-  color = fresh.white ? (fresh.black?null:'b') : 'w';
-  if (!color) throw new Error('This game already has two players.');
-  const meta = { w:fresh.white, b:fresh.black, open:fresh.open };
-  meta[color==='w'?'w':'b'] = GH.me;
-  await ghFetch('/repos/'+GH.repo+'/issues/'+g.number, {method:'PATCH',
-    body:{ body:'Cubic chess game. Moves are comments below.\n\n<!--cc:'+JSON.stringify(meta)+'-->' }});
-  return color;
-}
-
-async function ghPostMove(m){
-  await ghFetch('/repos/'+GH.repo+'/issues/'+GH.issue+'/comments', {method:'POST', body:{ body: moveToComment(m) }});
-}
-async function ghGetMoves(){
-  const cs = await ghFetch('/repos/'+GH.repo+'/issues/'+GH.issue+'/comments?per_page=100');
-  return cs.map(c=>commentToMove(c.body)).filter(Boolean);
-}
-
 /* ---------- driving the board from a game ---------- */
-async function startOnlineGame(g, color){
-  stopOnlineGame();
-  GH.issue=g.number; GH.myColor=color; GH.seen=0;
-  $('ai').value='off';
-  closeModal(); closeHome();            // leave the menus when a game begins
-  if (gameMode===null) setMode('competitive');   // online defaults to competitive (no undo/hints)
-  reqId++; thinking=false; history=[];
-  startGame();
-  onlineStatus();
-  await syncOnline(true);
-  GH.poll = setInterval(()=>syncOnline(false), 5000);
-}
 function stopOnlineGame(){
-  if (GH.poll){ clearInterval(GH.poll); GH.poll=null; }
-  if (NET==='rooms') rmStop();
+  rmStop();
   GH.issue=null; GH.myColor=null; GH.seen=0;
   onlineStatus();
 }
 async function finishOnlineGame(){
   const n=GH.issue; if (n===null) return;
-  if (GH.poll){ clearInterval(GH.poll); GH.poll=null; }   // stop polling a decided game
-  if (NET==='rooms'){
-    if (RM.beat){ clearInterval(RM.beat); RM.beat=null; }
-    /* Sign our own claim about how it ended, and only our own: the rules let white
-       write over/w and nothing else, so "resign your opponent" is unreachable rather
-       than merely forbidden. A mate names the side NOT to move as the winner; anything
-       else that stops the game here is a stalemate, which is a draw. */
-    const out = inCheck(turn) ? (turn==='w' ? 'b' : 'w') : 'd';
-    try{ await rmPut('rooms/'+n+'/over/'+GH.myColor, out); }catch(e){}
-    return;
-  }
-  try{ await ghFetch('/repos/'+GH.repo+'/issues/'+n, {method:'PATCH', body:{state:'closed'}}); }catch(e){}
-}
-
-async function syncOnline(initial){
-  if (GH.busy || GH.issue===null) return;
-  GH.busy=true;
-  try{
-    const moves = await ghGetMoves();
-    if (moves.length > GH.seen){
-      for (let i=GH.seen; i<moves.length; i++){
-        const m = moves[i];
-        const p = board[ID(m.fx,m.fy,m.fz)];
-        if (!p || p.color!==turn) break;                       // out of order or already applied
-        if (!legalMoves(m.fx,m.fy,m.fz).some(v=>v.x===m.tx&&v.y===m.ty&&v.z===m.tz)) break;
-        history.push(m);
-        lastAI = (m.__mine ? null : {from:{x:m.fx,y:m.fy,z:m.fz}, to:{x:m.tx,y:m.ty,z:m.tz}});
-        applyMove(m.fx,m.fy,m.fz,m.tx,m.ty,m.tz,!initial,m.promo);
-      }
-      GH.seen = moves.length;
-      drawSelection();
-    }
-    GH.lastErr=null;
-  }catch(e){ GH.lastErr=e.message; }
-  finally{ GH.busy=false; onlineStatus(); }
+  if (RM.beat){ clearInterval(RM.beat); RM.beat=null; }
+  /* Sign our own claim about how it ended, and only our own: the rules let white write
+     over/w and nothing else, so "resign your opponent" is unreachable rather than
+     merely forbidden. A mate names the side NOT to move as the winner; anything else
+     that stops the game here is a stalemate, which is a draw. */
+  const out = inCheck(turn) ? (turn==='w' ? 'b' : 'w') : 'd';
+  try{ await rmPut('rooms/'+n+'/over/'+GH.myColor, out); }catch(e){}
 }
 
 function onlineActive(){ return GH.issue!==null; }
@@ -3065,11 +2876,11 @@ function myTurnOnline(){ return onlineActive() && turn===GH.myColor && !gameOver
 function onlineStatus(){
   const home=$('homeOnlineState');
   if (home){
-    if (!GH.token) home.textContent='';
-    else if (!onlineActive()) home.textContent='· connected';
-    else home.textContent = GH.lastErr ? '· sync error' : ('· game #'+GH.issue);
+    /* Nothing here when offline: the button's own label already says it, and saying it
+       twice in two type sizes reads as a stutter. */
+    if (NET==='off' || !onlineActive()) home.textContent='';
+    else home.textContent = GH.lastErr ? '· sync error' : ('· room '+GH.issue);
   }
-  // the in-game badge, when a game is live, shows whose move / your colour via refreshHUD
   const tag=$('onlineState');
   if (tag){
     if (!onlineActive()) tag.textContent='';
@@ -3105,10 +2916,17 @@ const FB = {
 /* Both strings are public by design: they name the project, they do not authorise
    anything. The database rules are what authorise. */
 
-const NET = new URLSearchParams(location.search).has('rooms') ? 'rooms' : 'gh';
+/* 'rooms' while the game server can be reached, 'off' when it cannot. There is no
+   third value: the GitHub transport is gone, and it could never have been the offline
+   answer anyway - it WAS an internet service, every move an api.github.com call. With
+   no network there is no online play of any kind, so the honest thing is to say so and
+   leave the three local modes, which need no network at all. */
+let NET = 'rooms';
 
 const RM_ALPHA = 'BCDFGHJKLMNPQRSTVWXZ';   // no vowels: no accidental words, no I/O/0/1
 const RM_SV = {'.sv':'timestamp'};
+/* One string, matched on exactly, rather than sniffed for a prefix in two places. */
+const RM_UNREACHABLE = 'Could not reach the game server. On school wifi, ask for identitytoolkit.googleapis.com and cubic-chess-af060-default-rtdb.firebaseio.com to be allowed.';
 const RM = { tok:null, uid:null, movesStr:'', beat:null, es:null, poll:null, wait:null, mode:'' };
 
 function rmCode(){
@@ -3141,10 +2959,17 @@ async function rmAuth(){
     }catch(e){}
     /* a dead refresh token falls through to a fresh identity rather than dead-ending */
   }
-  const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key='+FB.key, {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({returnSecureToken:true})});
-  if (!r.ok) throw new Error('Could not reach the game server. If you are on school wifi, ask for identitytoolkit.googleapis.com and cubic-chess-af060-default-rtdb.firebaseio.com to be allowed.');
+  /* A blocked or absent network makes fetch REJECT, it does not return a bad status -
+     so this has to catch as well as check. Getting that wrong meant the thrown error
+     was a bare "Failed to fetch", which matched nothing downstream and left the game
+     claiming to be online while no request could leave the building. */
+  let r;
+  try{
+    r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key='+FB.key, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({returnSecureToken:true})});
+  }catch(e){ throw new Error(RM_UNREACHABLE); }
+  if (!r.ok) throw new Error(RM_UNREACHABLE);
   const j = await r.json();
   RM.tok=j.idToken; RM.uid=j.localId;
   try{ localStorage.setItem('cc_rm', JSON.stringify({refresh:j.refreshToken, uid:j.localId})); }catch(e){}
@@ -3323,10 +3148,66 @@ async function rmSend(mv){
 }
 
 /* ---------- modal wiring ---------- */
+/* ---------- can we reach the game server at all? ----------
+   Deliberately UNAUTHENTICATED. Any HTTP answer means we got there - a 401 is the
+   expected one, since the rules deny an anonymous read of the root - and only a
+   network-level failure means we did not. Probing this way costs nothing and, more to
+   the point, does not mint an anonymous account for somebody who only ever plays
+   Practice. */
+/* THERE IS NO SPECULATIVE PROBE, and that is deliberate. Reaching for the server on
+   every page load costs a request for the majority of visits that never touch online
+   play, mints nothing useful, and - since the rules rightly refuse an anonymous read
+   of the root - paints a red 401 in the console of a game that is working perfectly.
+   Chrome logs that whatever you do to the request; no-cors only hides the status from
+   us, not from the log.
+
+   So the button follows navigator.onLine, which is free, and the truth arrives at the
+   only moment it matters: when somebody actually tries to start or join a game. A
+   failure there flips the button to Offline Play Only and says which host to ask for.
+   The cost is that a filtered-but-connected network looks fine until the first tap,
+   which is a fair trade for not lying in the console of every other load. */
+
+/* Could not REACH the server, as opposed to the server refusing something. Only the
+   first means offline; a refused join just means a wrong code. */
+function rmNoteFailure(e){
+  const m = String((e && e.message) || '');
+  if (m === RM_UNREACHABLE || navigator.onLine === false){
+    rmSetOffline(true);
+    closeModal();
+    toast('No connection to the game server — Practice, Competitive and Coach still work.');
+  }
+}
+
+function rmSetOffline(off){
+  NET = off ? 'off' : 'rooms';
+  const btn=$('modeOnline'), lab=$('modeOnlineLabel'), sub=$('modeOnlineSub');
+  if (lab) lab.textContent = off ? 'Offline Play Only' : 'Play online';
+  if (sub) sub.textContent = off
+    ? 'No connection to the game server. Practice, Competitive and Coach all work without one.'
+    : 'Play someone with a four-letter code';
+  if (btn) btn.classList.toggle('isoff', off);
+  onlineStatus();
+}
+
+/* A Chromebook that sleeps on one wifi and wakes on another is the ordinary case, so
+   follow the browser's own signal both ways. Coming back online clears the flag
+   hopefully rather than provably - the next create or join settles it. */
+(function watchNetwork(){
+  rmSetOffline(navigator.onLine === false);
+  window.addEventListener('online',  ()=>rmSetOffline(false));
+  window.addEventListener('offline', ()=>{
+    rmSetOffline(true);
+    if (onlineActive()){ GH.lastErr='offline'; onlineStatus(); }
+  });
+})();
+
 function openModal(){
+  if (NET==='off'){
+    toast('No connection — Practice, Competitive and Coach all work without one.');
+    return;
+  }
   $('ghModal').classList.add('on');
-  if (NET==='rooms'){ rmShow('rmStart'); return; }
-  if (GH.token){ showLobby(); refreshLobby(); } else { showConnect(); }
+  rmShow('rmStart');
 }
 function closeModal(){ $('ghModal').classList.remove('on'); }
 /* One pane visible at a time. The GitHub panes and the room panes share the sheet, so
@@ -3336,74 +3217,9 @@ function rmShow(which){
     const n=$(id); if (n) n.style.display = (id===which) ? '' : 'none';
   }
 }
-function showConnect(){ $('ghConnect').style.display=''; $('ghLobby').style.display='none'; }
-function showLobby(){ $('ghConnect').style.display='none'; $('ghLobby').style.display=''; $('ghWho').textContent=GH.repo+' · '+GH.me; }
-
-async function refreshLobby(){
-  const list=$('ghList'); list.innerHTML='<div class="gempty">Loading…</div>';
-  try{
-    const games = await ghListGames();
-    if (!games.length){ list.innerHTML='<div class="gempty">No games yet. Start one.</div>'; return; }
-    list.innerHTML='';
-    games.sort((a,b)=> (b.updated||'').localeCompare(a.updated||''));
-    for (const g of games){
-      const mine = g.white===GH.me || g.black===GH.me;
-      const seat = g.white===GH.me?'White':g.black===GH.me?'Black':null;
-      const opp = g.white===GH.me?g.black:g.white;
-      const el=document.createElement('div'); el.className='gitem';
-      let sub;
-      if (g.state==='closed') sub='<span class="s win">finished</span>';
-      else if (mine) sub='<span class="s you">you: '+seat+(opp?' · vs '+opp:' · open seat')+'</span>';
-      else if (!g.white||!g.black) sub='<span class="s">open seat · tap to join</span>';
-      else sub='<span class="s">'+g.white+' vs '+g.black+'</span>';
-      el.innerHTML='<span class="t">#'+g.number+' · '+(g.white||'?')+' / '+(g.black||'?')+'</span>'+sub;
-      el.onclick=()=>enterGame(g);
-      list.appendChild(el);
-    }
-  }catch(e){ list.innerHTML='<div class="gempty">'+esc(e.message)+'</div>'; }
-}
-
-async function enterGame(g){
-  try{
-    if (g.state==='closed'){ /* spectate a finished game read-only */ }
-    const color = g.state==='closed'
-      ? (g.white===GH.me?'w':g.black===GH.me?'b':'w')
-      : await ghJoinGame(g);
-    closeModal();
-    await startOnlineGame(g, color);
-    toast(g.state==='closed' ? 'Reviewing finished game #'+g.number
-                             : 'Joined game #'+g.number+' as '+(color==='w'?'White':'Black'));
-  }catch(e){ toast(e.message); }
-}
-
 /* wire up */
-document.addEventListener('DOMContentLoaded', ()=>{}, {once:true});
 $('modeOnline').onclick = ()=>{ openModal(); };
 $('ghClose').onclick = closeModal;
-$('ghHelpBtn').onclick = ()=> $('ghHelp').classList.toggle('on');
-$('ghConnectBtn').onclick = async ()=>{
-  const repo=$('ghRepo').value.trim(), token=$('ghToken').value.trim();
-  const err=$('ghErr'); err.textContent='';
-  if (!/^[^/]+\/[^/]+$/.test(repo)){ err.textContent='Repo must look like owner/name.'; return; }
-  if (!token){ err.textContent='Paste your access token.'; return; }
-  $('ghConnectBtn').textContent='Connecting…'; $('ghConnectBtn').disabled=true;
-  try{
-    await ghConnect(repo, token);
-    showLobby(); refreshLobby(); onlineStatus();
-  }catch(e){ err.textContent=e.message; }
-  finally{ $('ghConnectBtn').textContent='Connect'; $('ghConnectBtn').disabled=false; }
-};
-$('ghNew').onclick = async ()=>{
-  try{
-    const color = Math.random()<0.5?'w':'b';
-    const g = await ghCreateGame(color);
-    closeModal();
-    await startOnlineGame(g, color);
-    toast('Created game #'+g.number+' — you are '+(color==='w'?'White':'Black')+'. Share the repo; your opponent joins from their lobby.');
-  }catch(e){ toast(e.message); }
-};
-$('ghRefresh').onclick = refreshLobby;
-$('ghDisconnect').onclick = ()=>{ ghDisconnect(); showConnect(); onlineStatus(); toast('Disconnected'); };
 
 /* ---------- room-code wiring ---------- */
 
@@ -3430,7 +3246,7 @@ function rmWaitFor(code, colour){
   }, 2000);
 }
 
-if (NET==='rooms'){
+{
   const nickOf = ()=> ($('rmNick').value||'').trim().slice(0,12);
   const rmErr  = m => { $('rmErr').textContent = m||''; };
   const remember = n => { try{ localStorage.setItem('cc_nick', n); }catch(e){} };
@@ -3443,7 +3259,7 @@ if (NET==='rooms'){
     try{
       remember(nick);
       rmWaitFor(await rmCreate(nick, 'w'), 'w');
-    }catch(e){ rmErr(e.message); }
+    }catch(e){ rmErr(e.message); rmNoteFailure(e); }
     finally{ b.disabled=false; b.textContent='Start a game'; }
   };
 
@@ -3460,7 +3276,7 @@ if (NET==='rooms'){
       const colour = await rmJoin(code, nick);
       await rmStart(code, colour);
       toast('Joined '+code+' — you are '+(colour==='w'?'White':'Black')+'.');
-    }catch(e){ rmErr(e.message); }
+    }catch(e){ rmErr(e.message); rmNoteFailure(e); }
     finally{ b.disabled=false; }
   };
 
@@ -3484,14 +3300,12 @@ if (NET==='rooms'){
   })();
 }
 
-// restore a saved session
-(function restoreGH(){
-  let saved; try{ saved=JSON.parse(localStorage.getItem('cc_gh')||'null'); }catch(e){}
-  if (saved && saved.repo && saved.token){
-    GH.repo=saved.repo; GH.token=saved.token;
-    ghFetch('/user').then(u=>{ GH.me=u.login; onlineStatus(); }).catch(()=>{ GH.token=null; });
-  }
-})();
+/* The GitHub transport is gone. Anything it left behind goes with it: cc_gh held a
+   personal access token in plaintext with Issues read+write on a shared repo, and on a
+   cart Chromebook that is one devtools tab away from the next student. Nothing
+   replaces it - the anonymous refresh token that took its place is scoped to one
+   throwaway project and grants a chess seat. */
+try{ localStorage.removeItem('cc_gh'); }catch(e){}
 
 /* ============================== LOOP ============================== */
 function startGame(){

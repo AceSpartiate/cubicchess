@@ -101,20 +101,30 @@ re-run the checks in `MAINTENANCE.md`.
   and length. Every one is a real fork or combination that nets material — never a free-piece grab.
   **None of the 50 is a forced mate.** Older versions of these docs claimed otherwise; the `k` tag
   reads `win` on all fifty. Mates live in Coach mode's `mate` category instead.
-- **Play online.** Trade turns with someone else. *Being rebuilt — see below.*
+- **Play online.** Type a name, tap **Start a game**, read the four letters out.
+  Your opponent taps **Join** and types them in. No account, no password, no email.
 
-## Online play is being replaced
+## Online play
 
-The online mode currently in this file stores each game as an issue in a private
-GitHub repo, which means every player needs a GitHub account, collaborator
-access, and a personal access token pasted into the game. That is far too much
-to ask of a student, and the shared token has real problems besides: it lets any
-player post moves into any other player's game, since the move reader validates
-that a move is *legal* but never checks *who wrote it*.
+Four letters, read aloud. Behind it: an anonymous Firebase token so the database
+rules have something to check, and one append-only string of moves — seven octal
+digits per ply, because 8⁷ is exactly 2²¹ and `encodeMove()` already yields a
+21-bit integer. `firebase/database.rules.json` is the whole security boundary and
+`FIREBASE.md` explains every clause.
 
-It is being replaced with a room-code flow — type a name, get a four-letter code,
-read it to your opponent — with optional Google or email sign-in for anyone who
-wants a saved record. Until that ships, treat the online button as unsupported.
+Moves arrive over Server-Sent Events, with a 3-second poll as the fallback: SSE is
+ordinary HTTPS on 443, and a WebSocket upgrade is the part school proxies get wrong.
+
+**With no connection the button reads "Offline Play Only"** and says so plainly.
+Practice, Competitive and Coach need no network at all — three of the four modes
+keep working, and the game does not pretend otherwise.
+
+The previous mode stored each game as an issue in a private GitHub repo, needing an
+account, collaborator access, and a personal access token pasted into the game by
+every player. It is gone. Besides the signup burden it let any player post moves
+into any other player's game, because the reader checked that a move was *legal*
+and never *who wrote it* — and it kept a live token in plaintext in `localStorage`
+on shared Chromebooks. Loading the game now deletes that key.
 
 ## Before you change anything
 

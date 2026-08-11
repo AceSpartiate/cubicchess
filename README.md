@@ -15,6 +15,8 @@ engine, an AI opponent, 11 themes, and 140 engine-verified puzzles.
 | `three.min.js` | three.js r128, vendored. See below. |
 | `tools/check.py` | Eight pre-flight checks. Run before committing; the hook runs it for you. |
 | `tools/validate.js` | Gates perft and replays all 140 puzzles. Called by `check.py`. |
+| `tools/test-rules.mjs` | 95 cases against the database rules. Offline. Called by `check.py`. |
+| `tools/sim.mjs` | A Realtime Database rules evaluator that does multi-path writes properly. |
 | `tools/stamp.py` | Writes the build id into `index.html` and `version.txt` together. |
 | `ARCHITECTURE.md` | Coordinate system, movement rules, engine API, rendering, file layout. |
 | `PUZZLES.md` | How Coach mode and the puzzle generator work, and how the puzzles were produced. |
@@ -44,7 +46,7 @@ calls `api.github.com`; see below, it is being replaced.
 python tools/check.py
 ```
 
-Eight numbered checks. The two that matter most need `node`: every `<script>` block
+Ten numbered checks. The two that matter most need `node`: every `<script>` block
 must parse **on its own** (Chrome loads three of them separately), and `validate.js`
 must gate perft at **136 / 18479** and replay every line of all 140 puzzles through
 the engine's own move generator. The rest catch absolute URLs, ids the script reaches

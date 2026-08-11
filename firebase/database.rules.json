@@ -5,63 +5,50 @@
 
     "rooms": {
       "$code": {
-        ".read": "auth != null && $code.length === 4",
-        ".write": "auth != null && !data.exists()",
-        ".validate": "newData.hasChildren(['createdAt','seats']) && (newData.child('seats/w/uid').val() === auth.uid || newData.child('seats/b/uid').val() === auth.uid) && (data.exists() || !newData.hasChild('moves'))",
+        ".read": "auth != null && ((data.child('seats/w').isString() && data.child('seats/w').val().beginsWith(auth.uid + ':')) || (data.child('seats/b').isString() && data.child('seats/b').val().beginsWith(auth.uid + ':')))",
 
-        "createdAt": { ".validate": "newData.val() === now" },
+        ".write": "auth != null && $code.matches(/^[BCDFGHJKLMNPQRSTVWXZ]{4}$/) && newData.child('createdAt').val() === now && newData.child('moves').val() === '' && !newData.hasChild('over') && ((newData.child('seats/w').isString() && newData.child('seats/w').val().beginsWith(auth.uid + ':') && newData.child('seen/w').val() === now && !newData.hasChild('seats/b') && !newData.hasChild('seen/b')) || (newData.child('seats/b').isString() && newData.child('seats/b').val().beginsWith(auth.uid + ':') && newData.child('seen/b').val() === now && !newData.hasChild('seats/w') && !newData.hasChild('seen/w'))) && (!data.exists() || ((!data.child('seen/w').isNumber() || data.child('seen/w').val() < now - 600000) && (!data.child('seen/b').isNumber() || data.child('seen/b').val() < now - 600000) && (data.child('moves').val() === '' || ((!data.child('seen/w').isNumber() || data.child('seen/w').val() < now - 86400000) && (!data.child('seen/b').isNumber() || data.child('seen/b').val() < now - 86400000)))))",
 
-        "status": {
-          ".write": "auth != null && (root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid || root.child('rooms/' + $code + '/seats/b/uid').val() === auth.uid)",
-          ".validate": "newData.isString() && newData.val().length <= 8"
+        "createdAt": {
+          ".validate": "newData.isNumber() && newData.val() === now"
         },
-        "result": {
-          ".write": "auth != null && (root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid || root.child('rooms/' + $code + '/seats/b/uid').val() === auth.uid)",
-          ".validate": "newData.isString() && newData.val().length <= 16"
-        },
-        "lastUid": {
-          ".write": "auth != null && (root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid || root.child('rooms/' + $code + '/seats/b/uid').val() === auth.uid)",
-          ".validate": "newData.val() === auth.uid"
+
+        "moves": {
+          ".write": "auth != null && data.isString() && newData.isString() && newData.val().beginsWith(data.val()) && newData.val().length === data.val().length + 7 && newData.val().length <= 2800 && !root.child('rooms').child($code).child('over').exists() && root.child('rooms').child($code).child('seats/w').isString() && root.child('rooms').child($code).child('seats/b').isString() && ((data.val().length % 14 === 0 && root.child('rooms').child($code).child('seats/w').val().beginsWith(auth.uid + ':')) || (data.val().length % 14 === 7 && root.child('rooms').child($code).child('seats/b').val().beginsWith(auth.uid + ':')))",
+          ".validate": "newData.isString() && newData.val().length <= 2800 && newData.val().length % 7 === 0 && newData.val().matches(/^[0-7]*$/)"
         },
 
         "seats": {
           "$c": {
-            ".write": "auth != null && (!data.exists() || data.child('uid').val() === auth.uid || data.child('lastSeen').val() < now - 90000) && (($c === 'w' && root.child('rooms/' + $code + '/seats/b/uid').val() !== auth.uid) || ($c === 'b' && root.child('rooms/' + $code + '/seats/w/uid').val() !== auth.uid))",
-            ".validate": "($c === 'w' || $c === 'b') && newData.hasChildren(['uid','name','lastSeen'])",
-
-            "uid":      { ".validate": "newData.val() === auth.uid" },
-            "name":     { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 12" },
-            "lastSeen": { ".validate": "newData.val() === now" },
-            "$other":   { ".validate": false }
+            ".write": "auth != null && ($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && root.child('rooms').child($code).child('moves').isString() && newData.parent().parent().child('seen').child($c).val() === now && ((data.isString() && data.val().beginsWith(auth.uid + ':')) || (root.child('rooms').child($code).child('moves').val() === '' && (!data.exists() || !root.child('rooms').child($code).child('seen').child($c).isNumber() || root.child('rooms').child($code).child('seen').child($c).val() < now - 90000)))",
+            ".validate": "($c === 'w' || $c === 'b') && newData.isString() && newData.val().beginsWith(auth.uid + ':') && newData.val().matches(/^[A-Za-z0-9_-]{1,128}:[A-Za-z0-9 _-]{1,12}$/) && (($c === 'w' && (!newData.parent().child('b').isString() || !newData.parent().child('b').val().beginsWith(auth.uid + ':'))) || ($c === 'b' && (!newData.parent().child('w').isString() || !newData.parent().child('w').val().beginsWith(auth.uid + ':'))))"
           }
         },
 
-        "moves": {
-          "$ply": {
-            ".write": "auth != null && !data.exists() && (root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid || root.child('rooms/' + $code + '/seats/b/uid').val() === auth.uid) && root.child('rooms/' + $code + '/lastUid').val() !== auth.uid && ($ply !== '0' || root.child('rooms/' + $code + '/seats/w/uid').val() === auth.uid)",
-            ".validate": "newData.hasChildren(['v','uid']) && $ply.matches(/^[0-9]{1,3}$/) && newData.parent().parent().child('lastUid').val() === auth.uid",
-
-            "v":      { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2097151" },
-            "uid":    { ".validate": "newData.val() === auth.uid" },
-            "$other": { ".validate": false }
+        "seen": {
+          "$c": {
+            ".write": "auth != null && ($c === 'w' || $c === 'b') && newData.val() === now && newData.parent().parent().child('seats').child($c).isString() && newData.parent().parent().child('seats').child($c).val().beginsWith(auth.uid + ':')",
+            ".validate": "($c === 'w' || $c === 'b') && newData.isNumber() && newData.val() === now"
           }
         },
 
-        "$other": { ".validate": false }
+        "over": {
+          "$c": {
+            ".write": "auth != null && ($c === 'w' || $c === 'b') && !data.exists() && newData.isString() && root.child('rooms').child($code).child('seats/w').isString() && root.child('rooms').child($code).child('seats/b').isString() && root.child('rooms').child($code).child('seats').child($c).val().beginsWith(auth.uid + ':')",
+            ".validate": "($c === 'w' || $c === 'b') && newData.isString() && (newData.val() === 'w' || newData.val() === 'b' || newData.val() === 'd')"
+          }
+        },
+
+        "$other": {
+          ".validate": false
+        }
       }
     },
 
-    "users": {
-      "$uid": {
-        ".read":  "auth != null && auth.uid === $uid",
-        ".write": "auth != null && auth.uid === $uid",
-        "stats": {
-          "w": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-          "l": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-          "d": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-          "$other": { ".validate": false }
-        }
-      }
+    "$other": {
+      ".read": false,
+      ".write": false,
+      ".validate": false
     }
   }
 }

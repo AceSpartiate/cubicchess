@@ -245,7 +245,29 @@ else:
             count(doc["rules"])
             ok("rules well-formed (%d path nodes)" % n[0])
 
-print("\n9. Nothing is half-staged")
+print("\n9. The rules do what they are supposed to, and nothing else")
+# Shape and syntax (check 8) say the console will ACCEPT the file. They say nothing
+# about whether it lets a stranger delete a room, or refuses a legal move. Three rule
+# sets have shipped here that passed every check available in the Firebase console: one
+# where no move could be played at all, one where any stranger could delete a day-old
+# game, and one where a player could write the whole rest of the game in a single
+# request. tools/sim.mjs evaluates multi-path writes the way RTDB really does - which
+# is the one thing the Rules Playground cannot do - and it was calibrated against 29
+# requests whose live verdicts were known before it was trusted.
+if not HAVE_NODE:
+    skip("node not on PATH - rules behaviour unchecked")
+elif not os.path.exists(os.path.join(ROOT, "tools", "test-rules.mjs")):
+    skip("no tools/test-rules.mjs")
+else:
+    r = subprocess.run(["node", os.path.join(ROOT, "tools", "test-rules.mjs")],
+                       capture_output=True, text=True, cwd=ROOT)
+    tail = (r.stdout.strip().splitlines() or [""])[-1]
+    if r.returncode == 0:
+        ok(tail or "rules suite passed")
+    else:
+        bad("rules suite failed:\n" + (r.stdout + r.stderr)[-2000:])
+
+print("\n10. Nothing is half-staged")
 if shutil.which("git") is None:
     skip("git not on PATH")
 else:

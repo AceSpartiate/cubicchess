@@ -50,76 +50,88 @@ not start with a dot is a child path and must map to an object**, so a `"// note
 the file and fails on any child path that is not an object, so it cannot happen again.
 The annotation that used to live in the file is the section below instead.
 
-### What each clause is doing
-
-| Where | Clause | Stops |
-|---|---|---|
-| `$code` `.write` | `!data.exists() \|\| createdAt < now - 24h` | writing to an existing room through the create grant; lets a day-old code be recycled |
-| `$code` `.validate` | `data.exists() \|\| !newData.hasChild('moves')` | **seeding a brand-new room with a fabricated move list.** The create grant cascades to every child, so without this every per-move rule below could be skipped by writing the whole room at once |
-| `seats/$c` `.write` | `!data.exists() \|\| uid === auth.uid \|\| lastSeen < now - 90s` | stealing a seat someone is actively sitting in; still allows reclaiming one dark for 90 seconds |
-| `seats/$c` `.write` | the trailing `w`/`b` cross-check | one uid holding **both** seats — two tabs on one Chromebook |
-| `moves/$ply` `.write` | `!data.exists()` | overwriting or reordering a played move; also makes retries idempotent, so a failed send can safely be resent |
-| `moves/$ply` `.write` | seated-uid check | a third party who knows the code writing moves into your game |
-| `moves/$ply` `.write` | `lastUid !== auth.uid` | **moving twice in a row.** `root` is pre-write state, so this reads "the last person to move was not me" |
-| `moves/$ply` `.validate` | `newData.parent().parent().child('lastUid') === auth.uid` | dodging the above by never updating `lastUid` — forces it into the same atomic write. Two `.parent()` hops climb `$ply` → `moves` → the room, and reading through `newData` is what makes it POST-write |
-| `moves/$ply` `.write` | `$ply !== '0' \|\| w seat is me` | black playing the opening move, when no `lastUid` exists yet |
-| `lastUid` `.write` | seated-uid check | **not a restriction — a grant, and without it the game does not work at all.** A multi-path PATCH is evaluated at *each written path separately*, so `moves/5` and `lastUid` are two writes. `lastUid` had no `.write` of its own and inherited the room's, which is false for a room that already exists — so every move was denied and no game could be played. Caught by the live test, not by the Playground, which only ever exercises one path |
-| `v` `.validate` | `0 … 2097151` | a move integer outside the 21 bits `encodeMove()` produces |
-| `$other` everywhere | `false` | inventing new fields anywhere in the tree |
-
-What they deliberately do **not** stop is an illegal *chess* move — no rules language
-can play chess. That stays where it is: every inbound move is replayed through
-`legalMoves()` before it lands.
-
-These rules are the entire security boundary. There is no server, so nothing else
-stands between a student and the database. They stop: enumerating rooms, writing
-without auth, taking an occupied live seat, holding both seats yourself, overwriting
-or reordering a played move, moving twice in a row, black playing first, writing an
-out-of-range move number, forging a uid or a timestamp, names over 12 characters,
-adding unknown fields anywhere, and touching another player's stats.
-
-They do **not** stop an illegal chess move — no rules language can play chess. That
-stays where it already is: every inbound move is replayed through `legalMoves()`
-before it lands, so a forged move stops the board at the last legal position.
-
-### Test them against the real project
+### The data model
 
 ```
-python tools/test-rules.py
+/rooms/$code                 $code matches ^[BCDFGHJKLMNPQRSTVWXZ]{4}$   (160,000 codes,
+                             no vowels so no accidental words, no confusable glyphs)
+  createdAt : number, always === now
+  moves     : ONE string. 7 octal digits per ply, append-only, <= 2800 (400 plies)
+  seats/w   : "<uid>:<nickname>"   one leaf, so it cannot be half-written
+  seats/b   : same, absent until someone joins
+  seen/w    : number === now       the heartbeat
+  seen/b    : number === now
+  over/w    : "w" | "b" | "d"      white's signed claim, write-once
+  over/b    : "w" | "b" | "d"      black's signed claim, write-once
 ```
 
-28 cases against the live database: eight things honest play must be allowed to do,
-twenty a cheat or a stranger must not. **Run it after every rules change.** It has
-already caught two bugs that nothing else would have:
+Stored nowhere, derived instead: **ply count** is `length / 7`; **whose turn** is
+`length % 14` (0 = white, 7 = black); **your colour** is the seat whose prefix before
+the `:` is your uid; **seat is live** if `now - seen < 90s`; **the outcome** is
+`over/w === 'b'` (white resigned), `over/b === 'w'` (black resigned), both agreeing
+(a draw), or otherwise whatever replaying the moves says.
 
-- `lastUid` had no `.write` of its own, so the client's atomic move PATCH was denied
-  and **no move could be played in any game.**
-- The room grant said *"writable if it does not exist **or is older than 24 hours**"*,
-  and that second clause named no uid — so a day after creation **any stranger with a
-  free anonymous token could delete a room, rewrite its history, or seat themselves in
-  it**, because write grants cascade past every rule beneath them.
+### Why moves are one string and not one node per ply
 
-The two hid each other: the only window in which the game worked was the window in
-which it was wide open.
+This is the whole design, and it is the fix for a bug class rather than a bug.
 
-### The Playground is not enough
+The obvious model is `moves/0`, `moves/1`, `moves/2`. It cannot work, because **RTDB
+rules cannot count children or do arithmetic on a key** — so "exactly one move was
+appended" and "it is your turn" are *inexpressible*. Worse, a multi-path write is
+evaluated at each path against the **same pre-write snapshot**, so ten plies written in
+one request all see "the last mover wasn't me" and all pass. That was live in this
+project: a player could write the entire rest of the game in a single request, and
+black could open the game by using the key `"00"` instead of `"0"`.
 
-**Rules Playground**, on the same page, is still worth a minute — but understand its
-limit. It simulates **one path at a time**, and the client's move is a multi-path
-write whose two halves are evaluated separately. A rule set can pass every Playground
-case and still make the game unplayable. That is exactly what happened here. Use it
-for spot checks, not for proof:
+As one string, none of that is reachable:
 
-| Simulate | Location | Expect |
-|---|---|---|
-| Write, authenticated | `/rooms/WXKB/seats/w` | **Allow** (room does not exist yet) |
-| Read, unauthenticated | `/rooms/WXKB` | **Deny** |
-| Write, authenticated as a different uid | `/rooms/WXKB/seats/w` when the seat is held and fresh | **Deny** |
-| Write, authenticated as the seated uid | `/rooms/WXKB/moves/12` with 12 empty | **Allow** |
-| Same write again | `/rooms/WXKB/moves/12` now occupied | **Deny** |
+| Guarantee | How |
+|---|---|
+| Exactly one move per write | `newData.length === data.length + 7` — and a PATCH cannot carry two legs at the same path |
+| Whose turn it is | `data.length % 14`, read from **pre-write** state, so batching cannot move it |
+| Append-only | `beginsWith(data.val())` — history cannot be edited or reordered |
+| Move fits 21 bits | the alphabet `[0-7]` **is** the range check: 8⁷ = 2²¹ exactly. Base 36 or 64 would have silently admitted out-of-range values |
+| No key aliasing | there are no keys |
+| Game length | `<= 2800` chars = 400 plies |
 
-If any of those disagree, stop and tell me rather than working around it — a rule
-that fails open is worse than no rule, because it looks fine.
+### What the other clauses stop
+
+| Where | Stops |
+|---|---|
+| `$code` `.write` | Writing to an existing room at all. Creation only — plus a recycle that can *only* land a fresh, empty room over one whose seats have both gone quiet, and which denies DELETE because `newData` is null there |
+| `$code` `.read` | Reading a room you are not seated in — so codes cannot be swept for nicknames or game state |
+| `seats/$c` `.write` | Taking a seat that is live, or taking any seat once moves have been played. Mid-game seat theft was the real classroom griefing vector: wait for someone to tab out, take their seat, resign for them |
+| `seats/$c` `.validate` | One uid holding both colours — checked through `newData`, i.e. **post-write**, so a single PATCH claiming both is refused |
+| `seats/$c` | Being one leaf means a seat cannot be partly overwritten to inherit the previous player's nickname |
+| `seen/$c` `.write` | Heartbeating a seat that is not yours; forging a timestamp |
+| `over/$c` `.write` | Writing the *other* player's claim. White can only ever write `over/w`, so "resign your opponent" is unreachable rather than merely validated against. Write-once |
+| `$other`, both levels | Any key not named above, anywhere — including the `/users` blob store that any anonymous uid could previously have filled the free tier with |
+
+What none of it stops is an illegal *chess* move; no rules language can play chess.
+Every inbound move is still replayed through `legalMoves()` before it lands.
+
+### Testing them
+
+```
+node tools/test-rules.mjs
+```
+
+95 cases — 22 things honest play must be allowed to do, including a complete 400-ply
+game played to the cap, and 73 that must be refused. **Offline: no project, no network,
+no npm.** `tools/check.py` runs it, so it gates every commit.
+
+**Do not rely on the Rules Playground.** It simulates one path at a time, and every
+serious bug this project has had lived in how RTDB evaluates a write spanning two.
+`tools/sim.mjs` evaluates multi-path writes the way the real thing does. Before it was
+trusted it was calibrated against 29 requests whose real verdicts were known from
+issuing them to the live project — 6 working exploits and 23 ordinary cases — and it
+agreed on all 29.
+
+The honest track record, since it is the argument for the harness: **three** rule sets
+shipped here that the console accepted without complaint. One under which no move could
+be played at all. One where any stranger could delete or rewrite any game a day after
+it was created. One where a player could write the whole rest of the game in a single
+request. None was findable by reading, and none was findable in the Playground.
 
 ## 4. Turn on Anonymous sign-in
 

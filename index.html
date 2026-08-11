@@ -1164,7 +1164,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260810-0943";
+const BUILD="20260811-1552";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -2570,6 +2570,13 @@ addEventListener('resize', ()=>{
 /* ============================== HUD ============================== */
 const $ = id => document.getElementById(id);
 const GLYPH = {p:'P',r:'R',n:'N',b:'B',q:'Q',k:'K'};
+
+/* Escaping anything that reaches innerHTML. This LIVED INSIDE the online block, which
+   is a block scheduled for deletion, and it is used from there and now from the room
+   lobby too. Moved out on its own so that a later range delete cannot quietly take it
+   along - which is exactly how buildSpine disappeared from the sibling project while
+   the call to it stayed. */
+function esc(s){ return (s||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 function refreshHUD(){
   if (typeof GH!=='undefined' && GH.issue!==null){
     if (!gameOver){
@@ -3052,7 +3059,6 @@ async function refreshLobby(){
     }
   }catch(e){ list.innerHTML='<div class="gempty">'+esc(e.message)+'</div>'; }
 }
-function esc(s){ return (s||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
 async function enterGame(g){
   try{

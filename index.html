@@ -146,6 +146,10 @@
      the `on` class. Both rules were dead and are gone. */
   #onlineState{float:right;font-size:9px;letter-spacing:.05em;color:var(--dim)}
 
+  /* The room code, sized to be read across a classroom. */
+  #rmBig{font-family:var(--mono);font-size:44px;letter-spacing:.22em;text-align:center;
+    color:var(--mint);padding:14px 0 6px;text-indent:.22em}
+
   /* A board that cannot be drawn must SAY so. three.js is vendored beside this
      file, so the only way to lose it is a bad deploy or a filter eating the .js —
      and both used to present as a black rectangle with nothing on screen and
@@ -530,6 +534,32 @@
       </div>
       <div id="ghList" class="glist"></div>
       <button id="ghDisconnect" class="ghost small" style="margin-top:10px">Disconnect</button>
+    </div>
+
+    <!-- The room-code panes. Reached only under ?rooms until the default flips. -->
+    <div class="mstep" id="rmStart" style="display:none">
+      <p class="mnote">Pick a name, then either start a game and read the code out, or type the code someone read to you.</p>
+      <label>Your name <span class="dim">up to 12 letters</span></label>
+      <input id="rmNick" maxlength="12" placeholder="Zed" autocomplete="off" spellcheck="false">
+      <div class="mbtns">
+        <button id="rmNew">Start a game</button>
+      </div>
+      <label style="margin-top:14px">Or join a game <span class="dim">four letters</span></label>
+      <input id="rmCode" maxlength="4" placeholder="KMTB" autocomplete="off" spellcheck="false"
+             style="text-transform:uppercase;letter-spacing:.3em;font-family:var(--mono)">
+      <div class="mbtns">
+        <button id="rmJoinBtn" class="ghost">Join</button>
+      </div>
+      <div class="merr" id="rmErr"></div>
+    </div>
+
+    <div class="mstep" id="rmWait" style="display:none">
+      <p class="mnote">Read these four letters to the person you want to play. They tap <b>Join</b> and type them in.</p>
+      <div id="rmBig"></div>
+      <p class="mnote" id="rmWaitMsg">Waiting for someone to join…</p>
+      <div class="mbtns">
+        <button id="rmCancel" class="ghost small">Cancel</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1164,7 +1194,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260811-1552";
+const BUILD="20260811-1602";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -2491,6 +2521,16 @@ function doMove(tx,ty,tz,promo){
 }
 async function postMyMove(mv){
   onlineStatus();
+  if (NET==='rooms'){
+    if (await rmSend(mv)) return;
+    /* The move genuinely did not land. The board has already drawn it, so leaving it
+       there would put the player a move ahead of the game for the rest of the game -
+       which is what the branch below used to do, silently, while its comment claimed a
+       retry that nothing performed. Rebuild from what the server actually has. */
+    toast('Your move did not reach the other player — putting the board back.');
+    await rmResync();
+    return;
+  }
   try{
     await ghPostMove(mv);
   }catch(e){
@@ -2976,12 +3016,23 @@ async function startOnlineGame(g, color){
 }
 function stopOnlineGame(){
   if (GH.poll){ clearInterval(GH.poll); GH.poll=null; }
+  if (NET==='rooms') rmStop();
   GH.issue=null; GH.myColor=null; GH.seen=0;
   onlineStatus();
 }
 async function finishOnlineGame(){
   const n=GH.issue; if (n===null) return;
   if (GH.poll){ clearInterval(GH.poll); GH.poll=null; }   // stop polling a decided game
+  if (NET==='rooms'){
+    if (RM.beat){ clearInterval(RM.beat); RM.beat=null; }
+    /* Sign our own claim about how it ended, and only our own: the rules let white
+       write over/w and nothing else, so "resign your opponent" is unreachable rather
+       than merely forbidden. A mate names the side NOT to move as the winner; anything
+       else that stops the game here is a stalemate, which is a draw. */
+    const out = inCheck(turn) ? (turn==='w' ? 'b' : 'w') : 'd';
+    try{ await rmPut('rooms/'+n+'/over/'+GH.myColor, out); }catch(e){}
+    return;
+  }
   try{ await ghFetch('/repos/'+GH.repo+'/issues/'+n, {method:'PATCH', body:{state:'closed'}}); }catch(e){}
 }
 
@@ -3027,12 +3078,264 @@ function onlineStatus(){
   refreshHUD();
 }
 
+/* ============================== ONLINE BY ROOM CODE ==============================
+   The replacement for the GitHub transport above. Type a name, get four letters, read
+   them out; your opponent types them and you are playing. No account, no password, no
+   email - the client silently obtains an anonymous token so the database rules have a
+   uid to check, and that is the whole of "signing in".
+
+   IT WRITES INTO THE EXISTING `GH` OBJECT ON PURPOSE. GH.issue holds the room code
+   instead of an issue number, GH.myColor the seat, GH.seen the ply count. That keeps
+   onlineActive(), myTurnOnline(), refreshHUD(), evaluateState() and the doMove branch
+   at ZERO edits, which on a 3,200-line file with no test suite is worth more than a
+   tidier name.
+
+   THE MOVE LIST IS ONE STRING. Seven octal digits per ply, because 8^7 is exactly
+   2^21 and encodeMove() already produces a 21-bit integer - so the alphabet is the
+   range check. The database rules can then say "exactly one move was appended"
+   (length + 7) and "whose turn it is" (length % 14), neither of which is expressible
+   with one node per ply. See FIREBASE.md.
+
+   NOTHING HERE IS REACHED WITHOUT ?rooms until the flag below is flipped. */
+
+const FB = {
+  key: 'AIzaSyBEqAq9l6sAvK70jTMeNdUGzJnmY6VDL3c',
+  db:  'https://cubic-chess-af060-default-rtdb.firebaseio.com'
+};
+/* Both strings are public by design: they name the project, they do not authorise
+   anything. The database rules are what authorise. */
+
+const NET = new URLSearchParams(location.search).has('rooms') ? 'rooms' : 'gh';
+
+const RM_ALPHA = 'BCDFGHJKLMNPQRSTVWXZ';   // no vowels: no accidental words, no I/O/0/1
+const RM_SV = {'.sv':'timestamp'};
+const RM = { tok:null, uid:null, movesStr:'', beat:null, es:null, poll:null, wait:null, mode:'' };
+
+function rmCode(){
+  let s=''; const a=new Uint8Array(4); crypto.getRandomValues(a);
+  for (let i=0;i<4;i++) s += RM_ALPHA[a[i] % RM_ALPHA.length];
+  return s;
+}
+function rmOct(v){ let s=v.toString(8); while (s.length<7) s='0'+s; return s; }
+function rmPlies(str){
+  const out=[];
+  for (let i=0; i+7<=str.length; i+=7) out.push(parseInt(str.slice(i,i+7), 8));
+  return out;
+}
+
+/* ---------- identity: an anonymous token, kept so a refresh keeps your seat ---------- */
+async function rmAuth(){
+  if (RM.tok) return;
+  let saved=null; try{ saved=JSON.parse(localStorage.getItem('cc_rm')||'null'); }catch(e){}
+  if (saved && saved.refresh){
+    try{
+      const r = await fetch('https://securetoken.googleapis.com/v1/token?key='+FB.key, {
+        method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:'grant_type=refresh_token&refresh_token='+encodeURIComponent(saved.refresh)});
+      if (r.ok){
+        const j = await r.json();
+        RM.tok=j.id_token; RM.uid=j.user_id;
+        try{ localStorage.setItem('cc_rm', JSON.stringify({refresh:j.refresh_token, uid:j.user_id})); }catch(e){}
+        return;
+      }
+    }catch(e){}
+    /* a dead refresh token falls through to a fresh identity rather than dead-ending */
+  }
+  const r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signUp?key='+FB.key, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({returnSecureToken:true})});
+  if (!r.ok) throw new Error('Could not reach the game server. If you are on school wifi, ask for identitytoolkit.googleapis.com and cubic-chess-af060-default-rtdb.firebaseio.com to be allowed.');
+  const j = await r.json();
+  RM.tok=j.idToken; RM.uid=j.localId;
+  try{ localStorage.setItem('cc_rm', JSON.stringify({refresh:j.refreshToken, uid:j.localId})); }catch(e){}
+}
+
+async function rmPut(path, val){
+  const r = await fetch(FB.db+'/'+path+'.json?auth='+RM.tok, {
+    method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(val)});
+  return r.ok;
+}
+async function rmGet(path){
+  const r = await fetch(FB.db+'/'+path+'.json?auth='+RM.tok, {cache:'no-store'});
+  if (!r.ok) return undefined;
+  return r.json();
+}
+
+/* ---------- creating and joining ---------- */
+async function rmCreate(nick, colour){
+  await rmAuth();
+  /* The rules make a room write a compare-and-set - !data.exists() - so a taken code
+     comes back refused and we simply try another. No read, no race. */
+  for (let i=0;i<12;i++){
+    const code = rmCode();
+    const body = { createdAt: RM_SV, moves: '', seats:{}, seen:{} };
+    body.seats[colour] = RM.uid+':'+nick;
+    body.seen[colour]  = RM_SV;
+    if (await rmPut('rooms/'+code, body)) return code;
+  }
+  throw new Error('Could not find a free code. Try again.');
+}
+
+async function rmJoin(code, nick){
+  await rmAuth();
+  /* A room cannot be read until you are seated in it, so there is no "is this code
+     real" probe - claiming a seat IS the probe. Black first, since the creator takes
+     white by default; if we already hold a seat this is also how we resume, because
+     rewriting your own seat is always allowed. */
+  for (const c of ['b','w']){
+    if (await rmPut('rooms/'+code+'/seats/'+c, RM.uid+':'+nick)){
+      await rmPut('rooms/'+code+'/seen/'+c, RM_SV);
+      return c;
+    }
+  }
+  throw new Error('That code is not open. Check the letters, or ask for a new game.');
+}
+
+/* ---------- the live game ---------- */
+async function rmStart(code, colour){
+  GH.issue=code; GH.myColor=colour; GH.seen=0;
+  RM.movesStr='';
+  try{ localStorage.setItem('cc_room', JSON.stringify({code, colour})); }catch(e){}
+  $('ai').value='off';
+  closeModal(); closeHome();
+  if (gameMode===null) setMode('competitive');
+  reqId++; thinking=false; history=[];
+  startGame();
+  onlineStatus();
+  await rmSync(true);
+  rmListen();
+  RM.beat = setInterval(rmBeat, 15000);
+  rmBeat();
+}
+
+function rmStop(){
+  if (RM.es){ try{ RM.es.close(); }catch(e){} RM.es=null; }
+  if (RM.poll){ clearInterval(RM.poll); RM.poll=null; }
+  if (RM.beat){ clearInterval(RM.beat); RM.beat=null; }
+  RM.mode=''; RM.movesStr='';
+  try{ localStorage.removeItem('cc_room'); }catch(e){}
+}
+
+function rmBeat(){
+  if (GH.issue===null || !GH.myColor) return;
+  rmPut('rooms/'+GH.issue+'/seen/'+GH.myColor, RM_SV).catch(()=>{});
+}
+
+/* Apply everything in the server's move string that we have not applied yet.
+   Every move is replayed through legalMoves() before it lands, exactly as the GitHub
+   transport did: the rules can enforce turn order and append-only, but no rules
+   language can play chess, so a forged-but-well-formed move stops the board at the
+   last legal position instead of corrupting it. */
+function rmApply(str, initial){
+  if (typeof str !== 'string' || str === RM.movesStr) return;
+  const plies = rmPlies(str);
+  for (let i=GH.seen; i<plies.length; i++){
+    const m = decodeMove(plies[i]);
+    const p = board[ID(m.fx,m.fy,m.fz)];
+    if (!p || p.color!==turn) break;
+    if (!legalMoves(m.fx,m.fy,m.fz).some(v=>v.x===m.tx&&v.y===m.ty&&v.z===m.tz)) break;
+    /* Whose move this was decides whether to draw the opponent trail. The old
+       transport read m.__mine, a property nothing ever set, so your own replayed
+       moves drew an opponent highlight. The piece's colour is the honest answer. */
+    const mine = (p.color === GH.myColor);
+    history.push(m);
+    lastAI = mine ? null : {from:{x:m.fx,y:m.fy,z:m.fz}, to:{x:m.tx,y:m.ty,z:m.tz}};
+    applyMove(m.fx,m.fy,m.fz,m.tx,m.ty,m.tz,!initial,m.promo);
+    GH.seen = i+1;
+  }
+  RM.movesStr = str;
+  drawSelection();
+}
+
+/* Throw the local position away and rebuild it from the server's move string. Used
+   when a send has definitively failed, so the board never stays ahead of the game. */
+async function rmResync(){
+  GH.seen=0; RM.movesStr=''; history=[]; lastAI=null;
+  startGame();
+  await rmSync(true);
+}
+
+async function rmSync(initial){
+  if (GH.busy || GH.issue===null) return;
+  GH.busy=true;
+  try{
+    const s = await rmGet('rooms/'+GH.issue+'/moves');
+    if (s === undefined) throw new Error('lost your seat in this game');
+    rmApply(typeof s==='string' ? s : '', initial);
+    GH.lastErr=null;
+  }catch(e){ GH.lastErr=e.message; }
+  finally{ GH.busy=false; onlineStatus(); }
+}
+
+/* Server-Sent Events first, polling if that does not arrive. SSE is ordinary HTTP on
+   443, which a school's TLS-inspecting proxy handles; a WebSocket upgrade is the part
+   those proxies get wrong. If neither works the player is told which host to ask for
+   rather than watching a spinner. */
+function rmListen(){
+  const url = FB.db+'/rooms/'+GH.issue+'/moves.json?auth='+RM.tok;
+  let arrived = false;
+  const toPolling = (why) => {
+    if (RM.mode==='poll') return;
+    RM.mode='poll';
+    if (RM.es){ try{ RM.es.close(); }catch(e){} RM.es=null; }
+    RM.poll = setInterval(()=>rmSync(false), 3000);
+    GH.lastErr = null;
+    onlineStatus();
+  };
+  try{
+    if (typeof EventSource === 'undefined') return toPolling('no EventSource');
+    RM.es = new EventSource(url);
+    RM.mode='sse';
+    RM.es.addEventListener('put', ev=>{
+      arrived = true;
+      try{
+        const d = JSON.parse(ev.data);
+        if (d && d.path === '/') rmApply(typeof d.data==='string' ? d.data : '', false);
+        else rmSync(false);
+      }catch(e){ rmSync(false); }
+      onlineStatus();
+    });
+    RM.es.addEventListener('patch', ()=>rmSync(false));
+    RM.es.onerror = ()=>{ if (!arrived) toPolling('sse error'); };
+    setTimeout(()=>{ if (!arrived) toPolling('sse silent'); }, 8000);
+  }catch(e){ toPolling('sse threw'); }
+}
+
+/* Sending a move. The write is idempotent by construction - the rules accept exactly
+   one appended ply and refuse anything else - so a retry is safe, and a refusal after
+   a successful send simply means it already landed. The old transport rolled a counter
+   back and left a comment saying it would retry; nothing retried, and the local board
+   ran ahead of the server for the rest of the game. */
+async function rmSend(mv){
+  const want = RM.movesStr + rmOct(encodeMove(mv));
+  for (let attempt=0; attempt<4; attempt++){
+    let ok=false;
+    try{ ok = await rmPut('rooms/'+GH.issue+'/moves', want); }catch(e){}
+    if (ok){ RM.movesStr = want; GH.lastErr=null; onlineStatus(); return true; }
+    await rmSync(false);                       // did it land, or has the position moved?
+    if (RM.movesStr === want){ GH.lastErr=null; onlineStatus(); return true; }
+    if (RM.movesStr.length >= want.length) break;   // the game moved on without us
+    await new Promise(r=>setTimeout(r, 800*(attempt+1)));
+  }
+  GH.lastErr='move not sent';
+  onlineStatus();
+  return false;
+}
+
 /* ---------- modal wiring ---------- */
 function openModal(){
   $('ghModal').classList.add('on');
+  if (NET==='rooms'){ rmShow('rmStart'); return; }
   if (GH.token){ showLobby(); refreshLobby(); } else { showConnect(); }
 }
 function closeModal(){ $('ghModal').classList.remove('on'); }
+/* One pane visible at a time. The GitHub panes and the room panes share the sheet, so
+   this hides all four rather than toggling a pair. */
+function rmShow(which){
+  for (const id of ['ghConnect','ghLobby','rmStart','rmWait']){
+    const n=$(id); if (n) n.style.display = (id===which) ? '' : 'none';
+  }
+}
 function showConnect(){ $('ghConnect').style.display=''; $('ghLobby').style.display='none'; }
 function showLobby(){ $('ghConnect').style.display='none'; $('ghLobby').style.display=''; $('ghWho').textContent=GH.repo+' · '+GH.me; }
 
@@ -3101,6 +3404,85 @@ $('ghNew').onclick = async ()=>{
 };
 $('ghRefresh').onclick = refreshLobby;
 $('ghDisconnect').onclick = ()=>{ ghDisconnect(); showConnect(); onlineStatus(); toast('Disconnected'); };
+
+/* ---------- room-code wiring ---------- */
+
+/* After creating a room, sit on the code until the other seat fills. The creator has
+   to keep their own seat warm while waiting, or it goes dark and someone else can take
+   it - so the wait loop doubles as a heartbeat. */
+function rmWaitFor(code, colour){
+  $('rmBig').textContent = code;
+  $('rmWaitMsg').textContent = 'Waiting for someone to join…';
+  rmShow('rmWait');
+  const other = colour==='w' ? 'b' : 'w';
+  let tick = 0;
+  if (RM.wait) clearInterval(RM.wait);
+  RM.wait = setInterval(async ()=>{
+    if (++tick % 5 === 0) rmPut('rooms/'+code+'/seen/'+colour, RM_SV).catch(()=>{});
+    let seats;
+    try{ seats = await rmGet('rooms/'+code+'/seats'); }catch(e){ return; }
+    if (seats && seats[other]){
+      clearInterval(RM.wait); RM.wait=null;
+      const who = String(seats[other]).split(':').slice(1).join(':') || 'Someone';
+      await rmStart(code, colour);
+      toast(who+' joined — you are '+(colour==='w'?'White':'Black')+'.');
+    }
+  }, 2000);
+}
+
+if (NET==='rooms'){
+  const nickOf = ()=> ($('rmNick').value||'').trim().slice(0,12);
+  const rmErr  = m => { $('rmErr').textContent = m||''; };
+  const remember = n => { try{ localStorage.setItem('cc_nick', n); }catch(e){} };
+
+  $('rmNew').onclick = async ()=>{
+    rmErr('');
+    const nick = nickOf();
+    if (!nick) return rmErr('Type a name first.');
+    const b=$('rmNew'); b.disabled=true; b.textContent='Starting…';
+    try{
+      remember(nick);
+      rmWaitFor(await rmCreate(nick, 'w'), 'w');
+    }catch(e){ rmErr(e.message); }
+    finally{ b.disabled=false; b.textContent='Start a game'; }
+  };
+
+  $('rmJoinBtn').onclick = async ()=>{
+    rmErr('');
+    const nick = nickOf();
+    if (!nick) return rmErr('Type a name first.');
+    const code = ($('rmCode').value||'').trim().toUpperCase();
+    if (!/^[BCDFGHJKLMNPQRSTVWXZ]{4}$/.test(code))
+      return rmErr('A code is four letters, and never a vowel.');
+    const b=$('rmJoinBtn'); b.disabled=true;
+    try{
+      remember(nick);
+      const colour = await rmJoin(code, nick);
+      await rmStart(code, colour);
+      toast('Joined '+code+' — you are '+(colour==='w'?'White':'Black')+'.');
+    }catch(e){ rmErr(e.message); }
+    finally{ b.disabled=false; }
+  };
+
+  $('rmCancel').onclick = ()=>{
+    if (RM.wait){ clearInterval(RM.wait); RM.wait=null; }
+    rmShow('rmStart');
+  };
+
+  try{ const n=localStorage.getItem('cc_nick'); if (n) $('rmNick').value=n; }catch(e){}
+
+  /* A closed lid, a reload, a Chromebook that went to sleep: come back to the game
+     rather than to the menu. The seat is ours to rewrite, so rejoining is the same
+     write as claiming it was. */
+  (function resumeRoom(){
+    let s=null; try{ s=JSON.parse(localStorage.getItem('cc_room')||'null'); }catch(e){}
+    if (!s || !s.code || !s.colour) return;
+    rmAuth().then(()=> rmGet('rooms/'+s.code+'/seats/'+s.colour)).then(seat=>{
+      if (typeof seat==='string' && seat.indexOf(RM.uid+':')===0) return rmStart(s.code, s.colour);
+      try{ localStorage.removeItem('cc_room'); }catch(e){}
+    }).catch(()=>{ try{ localStorage.removeItem('cc_room'); }catch(e){} });
+  })();
+}
 
 // restore a saved session
 (function restoreGH(){
@@ -3274,6 +3656,24 @@ function loop(now){
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+/* ---------- test hooks, only with ?hooks ----------
+   Nothing in this closure reaches window, which is deliberate. Driving the game from a
+   harness by clicking, though, means hitting a 3D board through overlays and mid-
+   animation, and that is flaky for reasons that have nothing to do with the game -
+   MAINTENANCE.md says as much and recommends direct hooks instead. This is that, gated
+   so it does not exist in ordinary play. */
+if (new URLSearchParams(location.search).has('hooks')){
+  window.__cc = {
+    get turn(){ return turn; },
+    get gameOver(){ return gameOver; },
+    get online(){ return {code:GH.issue, colour:GH.myColor, seen:GH.seen,
+                          moves:RM.movesStr, err:GH.lastErr, mode:RM.mode, uid:RM.uid}; },
+    at:(x,y,z)=>{ const p=board[ID(x,y,z)]; return p?{t:p.type,c:p.color}:null; },
+    legal:(x,y,z)=>legalMoves(x,y,z),
+    select, doMove, sync:()=>rmSync(false)
+  };
+}
 
 })();
 </script>

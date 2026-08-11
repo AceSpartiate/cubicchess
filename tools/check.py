@@ -90,13 +90,30 @@ else:
     ok("no absolute src/href")
 # fetch() to another origin is the same problem wearing a different hat. api.github.com
 # is expected until the room-code transport lands; it is named so it cannot be forgotten.
-fetches = sorted(set(re.findall(r'fetch\(\s*["\'](https?://[^"\']+)["\']', s)))
-known_pending = [u for u in fetches if u.startswith("https://api.github.com")]
-other = [u for u in fetches if u not in known_pending]
-if other:
-    bad("fetch() to an unexpected host: %s" % other)
-elif known_pending:
-    print("  note  fetch to api.github.com is the old online mode, pending replacement")
+# Every host the page may talk to, named on purpose. A new one is a decision - it is
+# another thing a school filter can block and another party the game depends on - so it
+# fails here until it is written down rather than passing because it looked plausible.
+ALLOWED_HOSTS = {
+    "api.github.com":
+        "the old online mode, pending removal",
+    "identitytoolkit.googleapis.com":
+        "anonymous sign-in; under googleapis.com, which a Workspace district cannot "
+        "block without breaking its own Chromebooks",
+    "securetoken.googleapis.com":
+        "refreshing that token so a seat survives a reload",
+}
+fetches = sorted(set(re.findall(r'fetch\(\s*["\'](https?://([^/"\']+)[^"\']*)["\']', s)))
+unknown = [u for u, host in fetches if host not in ALLOWED_HOSTS]
+if unknown:
+    bad("fetch() to a host that is not in ALLOWED_HOSTS: %s\n"
+        "        add it there with a reason, or vendor it" % unknown)
+else:
+    for _, host in fetches:
+        print("  note  %s - %s" % (host, ALLOWED_HOSTS[host]))
+    # The database host is built from a variable, so it never appears as a literal here.
+    if "firebasedatabase.app" in s or "firebaseio.com" in s:
+        print("  note  the Realtime Database host is the ONE domain in this design that "
+              "has not been tried from a student Chromebook")
 
 print("\n4. Every id the script reaches for exists")
 # Ids appear in static markup AND inside innerHTML strings - both are `id="x"` in this

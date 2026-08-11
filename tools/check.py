@@ -259,13 +259,20 @@ if not HAVE_NODE:
 elif not os.path.exists(os.path.join(ROOT, "tools", "test-rules.mjs")):
     skip("no tools/test-rules.mjs")
 else:
-    r = subprocess.run(["node", os.path.join(ROOT, "tools", "test-rules.mjs")],
-                       capture_output=True, text=True, cwd=ROOT)
-    tail = (r.stdout.strip().splitlines() or [""])[-1]
-    if r.returncode == 0:
-        ok(tail or "rules suite passed")
-    else:
-        bad("rules suite failed:\n" + (r.stdout + r.stderr)[-2000:])
+    # The evaluator gets checked BEFORE the thing it evaluates. It once shipped with
+    # hasChild() doing a raw property lookup, so every path form silently returned
+    # false, four guards went vacuously true, and the suite was green on rules it was
+    # not testing. A green suite on a broken checker is worse than no suite: it
+    # reassures. calibrate-sim.mjs pins it to verdicts recorded from the live project.
+    for script, what in (("calibrate-sim.mjs", "evaluator"), ("test-rules.mjs", "rules")):
+        r = subprocess.run(["node", os.path.join(ROOT, "tools", script)],
+                           capture_output=True, text=True, cwd=ROOT)
+        tail = (r.stdout.strip().splitlines() or [""])[-1]
+        if r.returncode == 0:
+            ok("%s: %s" % (what, tail))
+        else:
+            bad("%s check failed:\n%s" % (what, (r.stdout + r.stderr)[-2000:]))
+            break
 
 print("\n10. Nothing is half-staged")
 if shutil.which("git") is None:

@@ -16,7 +16,12 @@
  */
 import fs from 'fs';
 
-const RULES = JSON.parse(fs.readFileSync(new URL('../firebase/database.rules.json', import.meta.url), 'utf8')).rules;
+let RULES = JSON.parse(fs.readFileSync(new URL('../firebase/database.rules.json', import.meta.url), 'utf8')).rules;
+
+/* Point the evaluator at a different rules object. tools/calibrate-sim.mjs uses this
+ * to replay a set of rules that were once live, against verdicts recorded from the
+ * real Firebase, so the evaluator stays pinned to reality as it changes. */
+export function useRules(obj) { RULES = obj.rules || obj; }
 
 // ---- string methods RTDB adds ----
 String.prototype.matches = function (re) { return re.test(this.valueOf()); };
@@ -54,12 +59,17 @@ class Snap {
   child(p) { return new Snap(this.root, this.path ? this.path + '/' + p : String(p)); }
   parent() { const s = seg(this.path); s.pop(); return new Snap(this.root, s.join('/')); }
   exists() { return this._n() !== null; }
-  hasChild(k) { const v = this._n(); return !!(v && typeof v === 'object' && v[k] !== undefined && v[k] !== null); }
-  hasChildren(ks) {
+  // hasChild/hasChildren take a PATH, not a key: hasChild('seats/b') is legal and
+  // common. These once did a raw v[k] lookup, so any path form silently returned
+  // false — which made every `!newData.hasChild('seats/b')` guard vacuously TRUE and
+  // the suite green on rules that were not being tested. A bug in the checker is
+  // worse than a bug in the thing checked, because it is invisible and it reassures.
+  hasChild(p) { return at(this.root, this.path ? this.path + '/' + p : String(p)) !== null; }
+  hasChildren(ps) {
     const v = this._n();
     if (!v || typeof v !== 'object') return false;
-    if (!ks) return Object.keys(v).length > 0;
-    return ks.every(k => v[k] !== undefined && v[k] !== null);
+    if (!ps) return Object.keys(v).length > 0;
+    return ps.every(p => this.hasChild(p));
   }
   isNumber() { return typeof this._n() === 'number'; }
   isString() { return typeof this._n() === 'string'; }

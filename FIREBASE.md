@@ -100,7 +100,7 @@ As one string, none of that is reachable:
 |---|---|
 | `$code` `.write` | Writing to an existing room at all. Creation only — plus a recycle that can *only* land a fresh, empty room over one whose seats have both gone quiet, and which denies DELETE because `newData` is null there |
 | `$code` `.read` | Reading a room you are not seated in — so codes cannot be swept for nicknames or game state |
-| `seats/$c` `.write` | Taking a seat someone is still using. A **lobby** seat frees after 5 minutes dark, a seat in a **live game** after 10. Both were 90 seconds, which is under Chrome's background-tab timer throttle — a child who tabbed to Classroom for two minutes came back to a stranger in their chair. The long mid-game window is the compromise for a student whose Chromebook was re-imaged: they can get back into their own game, but not quickly enough to be a griefing tool |
+| `seats/$c` `.write` | Taking a seat someone is still using. Claiming a seat and starting its clock are **two separate writes** — no rule reads a sibling leg of the same request, because the engines disagree about whether it can. A **lobby** seat frees after 5 minutes dark, a seat in a **live game** after 10. Both were 90 seconds, which is under Chrome's background-tab timer throttle — a child who tabbed to Classroom for two minutes came back to a stranger in their chair. The long mid-game window is the compromise for a student whose Chromebook was re-imaged: they can get back into their own game, but not quickly enough to be a griefing tool |
 | `seats/$c` `.validate` | One uid holding both colours — checked through `newData`, i.e. **post-write**, so a single PATCH claiming both is refused. Also caps the nickname at 12 characters and keeps `<`, `>`, `&`, `"` and colons out of it, while allowing accented and apostrophed names — José and O'Neil are students, not attacks |
 | `seats/$c` | Being one leaf means a seat cannot be partly overwritten to inherit the previous player's nickname |
 | `seen/$c` `.write` | Heartbeating a seat that is not yours; forging a timestamp |
@@ -110,6 +110,24 @@ As one string, none of that is reachable:
 
 What none of it stops is an illegal *chess* move; no rules language can play chess.
 Every inbound move is still replayed through `legalMoves()` before it lands.
+
+### Five things the console accepts and then does not do
+
+Every one of these was published without complaint and found only by writing to the
+real database. `tools/check.py` check 8 now refuses each of them by name.
+
+| Written | What actually happened |
+|---|---|
+| `"// note": "text"` as a comment | rejected outright: any non-dot key is a child path and must map to an object |
+| `newData.root()` | no such method — `root` is a standalone variable holding pre-write state |
+| a `"` or `\` inside a regex literal | rejected: *Illegal regular expression* |
+| `newData.parent().parent()` reading a sibling leg | honoured when the sibling exists, **not** when it is being created, so nobody could join a game |
+| `[^:
+]` in a character class | parsed as the **letters n and r** — every Aaron, Brian and Erin silently refused |
+
+The last two are the dangerous kind: the file publishes cleanly and the game is simply
+broken for some people. Neither is findable by reading, and neither is findable in the
+Rules Playground.
 
 ### Testing them
 

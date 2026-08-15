@@ -58,6 +58,25 @@ else:
         os.unlink(tmp)
         ok("%s parses" % name) if r.returncode == 0 else bad("%s does not parse:\n%s" % (name, r.stderr))
 
+print("\n1b. The engine block stays self-contained")
+# It is serialised into a Blob and run in a Worker, so it gets its own copy of its own
+# source and shares NO scope with the main script. Referencing anything from out there
+# throws only when a Worker actually runs it - which is to say, in front of a player,
+# not in front of `node --check`. A blanket edit reached in here once and replaced a
+# board-size literal with the main script's variant object; validate.js caught it, but
+# only because it happens to run the engine outside a Worker.
+ENGINE_MUST_NOT_SEE = ["VARIANTS", "V.cells", "V.idx", "V.inside", "V.start",
+                       "document", "window.", "localStorage", "THREE.", "$("]
+eng_body = dict(BLOCKS).get("cubicEngine", "")
+reached = [n for n in ENGINE_MUST_NOT_SEE if n in eng_body]
+if not eng_body:
+    bad("no cubicEngine block found")
+elif reached:
+    bad("the engine block references things it cannot see from a Worker: %s\n"
+        "        it shares no scope with the main script - give it its own copy" % reached)
+else:
+    ok("the engine block references nothing from the main script")
+
 print("\n2. The rules still hold and every puzzle still works")
 if not HAVE_NODE:
     skip("node not on PATH - perft and 140 puzzles unchecked")

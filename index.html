@@ -1154,7 +1154,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260815-1633";
+const BUILD="20260815-1653";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1187,14 +1187,68 @@ const BUILD="20260815-1633";
   }catch(e){}
 })();
 
+/* ============================== WHAT A VARIANT IS ==============================
+   Cubic Chess is about to be one game of three - the cube, tri-dimensional chess, and
+   ordinary 2D chess - so the geometry stops being a fact about the file and becomes a
+   property of whichever game is being played.
+
+   A descriptor answers four questions and nothing else: what squares exist, where the
+   pieces start, which directions each piece rides, and where a pawn promotes. Anything
+   that is the SAME for every chess-like game - check, mate, turn order, the shape of a
+   move - stays in the shared code below and is written once.
+
+   NOTE FOR THE SECOND AND THIRD VARIANTS. The search engine cannot read this object.
+   It lives in a <script type="text/js-worker"> block that is serialised into a Blob and
+   run in a Worker, so it gets its own copy of its own source and shares no scope with
+   this script at all. That separation is not an accident of style; it is why the rules
+   exist twice, and why tools/agree.mjs has to exist to prove the two copies still say
+   the same thing. When a variant needs the engine, the descriptor has to be handed
+   across by postMessage rather than referenced. */
+
+const VARIANTS = {
+  cubic: {
+    id:    'cubic',
+    label: 'Cubic Chess',
+    sub:   'Eight levels, eight files, eight ranks. Pawns climb, bishops ride triagonals.',
+    nx: 8, ny: 8, nz: 8,
+    cells: 512,
+    idx:    (x,y,z) => x + 8*y + 64*z,          // x=file, y=level, z=rank
+    inside: (x,y,z) => x>=0 && x<8 && y>=0 && y<8 && z>=0 && z<8,
+    /* A pawn promotes on the far rank of ANY level - reaching the top costs nothing by
+       itself. Kept as a predicate because 2D chess asks the same question of one axis
+       and tri-dimensional chess asks it of a set of squares that moves. */
+    promotes: (color,x,y,z) => color==='w' ? z===7 : z===0,
+    /* Where the pieces start. A list, not a loop, so a variant with an irregular
+       opening array does not have to fight a nested for. */
+    start: (()=> {
+      const back = ['r','n','b','q','k','b','n','r'], out = [];
+      for (let x=0;x<8;x++){
+        out.push({t:back[x], c:'w', x, y:0, z:0});
+        out.push({t:'p',     c:'w', x, y:0, z:1});
+        out.push({t:'p',     c:'b', x, y:0, z:6});
+        out.push({t:back[x], c:'b', x, y:0, z:7});
+      }
+      return out;
+    })(),
+    /* Every move is 21 bits, which is exactly what the database rules accept as seven
+       octal digits. Cubic uses all of it: 9 + 9 + 3. The other two variants have
+       smaller boards and will fit with room to spare - but there is NO room to tag the
+       variant inside a move, which is why a room has to record its own. */
+    moveBits: { from: 9, to: 9, promo: 3 },
+  }
+};
+
+/* The variant in play. Everything below reads geometry from here rather than from a
+   literal, so a second entry in VARIANTS is a new game rather than a new branch. */
+let V = VARIANTS.cubic;
+
 /* ============================== GAME MODEL ============================== */
-const N = 8;
-const ID = (x,y,z) => x + 8*y + 64*z;          // x=file, y=level, z=rank
+const ID = (x,y,z) => V.idx(x,y,z);
 const inB = v => v>=0 && v<8;
-const okc = (x,y,z) => inB(x)&&inB(y)&&inB(z);
+const okc = (x,y,z) => V.inside(x,y,z);
 const other = c => c==='w' ? 'b' : 'w';
 
-let board = new Array(512).fill(null);
+let board = new Array(V.cells).fill(null);
 let turn = 'w';
 let history = [];          // {fx,fy,fz,tx,ty,tz}
 let captured = [];
@@ -1229,25 +1283,20 @@ function newPiece(type,color){ return {type,color,moved:false,group:null,id:Math
 
 // A pawn promotes on the far rank OR on the top level; only reaching both at once earns a queen.
 const PVAL = {p:1, n:6, b:11, r:6, q:18, k:0};
-function promoOptions(color,y,z){
-  const back = color==='w' ? z===7 : z===0;
-  return back ? ['q','r','b','n'] : null;   // any level's back row; full choice
+function promoOptions(color,y,z,x){
+  /* x is optional: cubic and 2D decide on z alone, but tri-dimensional chess needs the
+     file too, because its promotion squares are not a whole rank. */
+  return V.promotes(color, x===undefined ? 0 : x, y, z) ? ['q','r','b','n'] : null;
 }
 function materialBalance(){
   let w=0,b=0;
-  for (let i=0;i<512;i++){ const p=board[i]; if(!p) continue; if(p.color==='w') w+=PVAL[p.type]; else b+=PVAL[p.type]; }
+  for (let i=0;i<V.cells;i++){ const p=board[i]; if(!p) continue; if(p.color==='w') w+=PVAL[p.type]; else b+=PVAL[p.type]; }
   return w-b;
 }
 
 function setupBoard(){
-  board = new Array(512).fill(null);
-  const back = ['r','n','b','q','k','b','n','r'];
-  for (let x=0;x<8;x++){
-    board[ID(x,0,0)] = newPiece(back[x],'w');
-    board[ID(x,0,1)] = newPiece('p','w');
-    board[ID(x,0,6)] = newPiece('p','b');
-    board[ID(x,0,7)] = newPiece(back[x],'b');
-  }
+  board = new Array(V.cells).fill(null);
+  for (const s of V.start) board[ID(s.x,s.y,s.z)] = newPiece(s.t, s.c);
   turn='w'; captured=[]; gameOver=false;
 }
 
@@ -1321,7 +1370,7 @@ function pseudoMoves(x,y,z){
 }
 
 function findKing(color){
-  for (let i=0;i<512;i++){ const p=board[i]; if (p && p.type==='k' && p.color===color) return i; }
+  for (let i=0;i<V.cells;i++){ const p=board[i]; if (p && p.type==='k' && p.color===color) return i; }
   return -1;
 }
 
@@ -1382,7 +1431,7 @@ function legalMoves(x,y,z){
 }
 
 function hasAnyLegal(color){
-  for (let i=0;i<512;i++){
+  for (let i=0;i<V.cells;i++){
     const p = board[i];
     if (!p || p.color!==color) continue;
     const x=i%8, y=Math.floor(i/8)%8, z=Math.floor(i/64);
@@ -1833,7 +1882,7 @@ function buildMesh(type,color){
 const pieceLayer = new THREE.Group(); scene.add(pieceLayer);
 function syncMeshes(){
   while(pieceLayer.children.length) pieceLayer.remove(pieceLayer.children[0]);
-  for (let i=0;i<512;i++){
+  for (let i=0;i<V.cells;i++){
     const p = board[i]; if (!p) continue;
     const x=i%8, y=Math.floor(i/8)%8, z=Math.floor(i/64);
     const g = buildMesh(p.type,p.color);
@@ -2093,7 +2142,7 @@ function startPuzzle(cat, lvl){
   const puzzle=COACH_DATA.cats[cat].puzzles[lvl];
   coachState={cat, lvl, puzzle, step:0};
   // clear board and place the puzzle pieces
-  for(let i=0;i<512;i++) board[i]=null;
+  for(let i=0;i<V.cells;i++) board[i]=null;
   for(const p of puzzle.pieces){
     board[ID(p.x,p.y,p.z)] = {type:p.t, color:p.c, moved:!!p.m, group:null, id:Math.random()};
   }
@@ -2113,7 +2162,7 @@ function startPuzzle(cat, lvl){
 function startGeneratedPuzzle(pz){
   const kindLabel = pz.kind==='mate' ? 'Deliver mate' : 'Win material';
   coachState={ cat:'__gen', lvl:0, puzzle:pz, step:0, generated:true, kindLabel };
-  for(let i=0;i<512;i++) board[i]=null;
+  for(let i=0;i<V.cells;i++) board[i]=null;
   for(const p of pz.pieces){ board[ID(p.x,p.y,p.z)]={type:p.t,color:p.c,moved:!!p.m,group:null,id:Math.random()}; }
   turn=pz.side;
   gameOver=false; selected=null; selMoves=[]; pending=null; history=[]; captured=[]; lastAI=null;
@@ -2212,7 +2261,7 @@ function closeHome(){ $('home').classList.remove('on'); }
 function drawThreats(){
   if (!practice() || gameOver || selected || pending) return;
   const me = turn;
-  for (let i=0;i<512;i++){
+  for (let i=0;i<V.cells;i++){
     const pc = board[i];
     if (!pc || pc.color!==me) continue;
     const x=i%8, y=Math.floor(i/8)%8, z=Math.floor(i/64);
@@ -2399,7 +2448,7 @@ function moveMesh(p, x, y, z, animate){
   else p.group.position.copy(dest);
 }
 function refreshSquares(){
-  for (let i=0;i<512;i++){
+  for (let i=0;i<V.cells;i++){
     const p = board[i];
     if (p && p.group) p.group.userData.sq = {x:i%8, y:Math.floor(i/8)%8, z:Math.floor(i/64)};
   }
@@ -2721,7 +2770,7 @@ function ensureInline(){                       // fallback if workers are unavai
 }
 function exportPosition(){
   const bdA = new Int8Array(512), vgA = new Uint8Array(512);
-  for (let i=0;i<512;i++){
+  for (let i=0;i<V.cells;i++){
     const p = board[i]; if (!p) continue;
     bdA[i] = TYCODE[p.type] | (p.color==='b'?8:0);
     vgA[i] = p.moved ? 0 : 1;
@@ -2787,7 +2836,7 @@ function maybeAIMove(){
 }
 
 function anyLegalMove(color){
-  for (let i=0;i<512;i++){
+  for (let i=0;i<V.cells;i++){
     const p = board[i]; if (!p || p.color!==color) continue;
     const x=i%8, y=Math.floor(i/8)%8, z=Math.floor(i/64);
     const l = legalMoves(x,y,z);

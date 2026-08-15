@@ -116,6 +116,27 @@ else:
     else:
         bad("the engine and legalMoves() disagree:\n" + r.stdout[-1500:])
 
+print("\n2c. Traditional chess agrees with published perft")
+# Cubic chess is guarded by agree.mjs, which compares the display model against the
+# search engine. That engine is cubic-only - a Worker with its own copy of its own
+# source, hard-coded to a 512-cell cube - so the flat variant has NO second
+# implementation to be checked against, and the strongest guard here does not reach it.
+# Standard chess has something better: perft numbers cross-verified by hundreds of
+# engines for decades. External, exact, and unforgiving of a single wrong castling or
+# en-passant case. Depth 3 here; depth 4 passes too but costs more than a commit gate
+# should.
+if not HAVE_NODE:
+    skip("node not on PATH - the flat variant is unchecked")
+else:
+    r = subprocess.run(["node", os.path.join(ROOT, "tools", "perft-flat.mjs"), "3"],
+                       capture_output=True, text=True, cwd=ROOT)
+    if r.returncode == 0:
+        ok("perft 20 / 400 / 8902 from the opening position")
+    elif r.returncode == 2:
+        skip("the headless harness could not load the page")
+    else:
+        bad("traditional chess disagrees with published perft:\n" + r.stdout[-900:])
+
 print("\n3. Nothing is fetched from another host")
 # The whole point of vendoring three.js. A CDN this district blocks cost students
 # the board once already, and the failure looked like a broken game.

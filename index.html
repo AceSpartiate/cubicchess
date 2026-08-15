@@ -507,10 +507,10 @@
       </div>
       <div class="merr" id="rmErr"></div>
       <p class="mnote" id="rmRecord" style="margin-top:12px"></p>
-      <label class="ccmine"><input type="checkbox" id="rmMine"> This Chromebook is just mine</label>
-      <p class="mnote" id="rmMineWhy">Leave this unticked on a shared or cart Chromebook: closing the tab
+      <label class="ccmine"><input type="checkbox" id="rmMine"> This device is just mine</label>
+      <p class="mnote" id="rmMineWhy">Leave this unticked on a shared device: closing the tab
         then forgets you, so the next person does not pick up your name, your record or your seat.</p>
-      <button id="rmForget" class="ghost small" style="margin-top:8px">Forget me on this Chromebook</button>
+      <button id="rmForget" class="ghost small" style="margin-top:8px">Forget me on this device</button>
     </div>
 
     <div class="mstep" id="rmWait" style="display:none">
@@ -1154,7 +1154,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260815-1653";
+const BUILD="20260815-2224";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -2995,7 +2995,7 @@ function rmCode(){
 }
 /* ---------- where a player's own data lives ----------
    THE BUG THIS FIXES. The anonymous refresh token went into localStorage
-   unconditionally and nothing ever removed it. On a cart Chromebook the next child to
+   unconditionally and nothing ever removed it. On a shared device the next person to
    open the page WAS the previous child: same uid, so their seat in a live game, their
    name, and their resumable room all came along. Nobody had to do anything wrong for
    that to happen - closing the lid and handing the machine on was enough.
@@ -3036,7 +3036,7 @@ function ccSetMine(on){
 }
 /* Hand the machine to the next person cleanly. Clears identity AND the things tied to
    it, including the record and Coach progress - if you are wiping yourself off a shared
-   Chromebook, a half-finished puzzle set is exactly the kind of thing you meant. */
+   device, a half-finished puzzle set is exactly the kind of thing you meant. */
 function ccForget(){
   rmStop();
   RM.tok = null; RM.uid = null;
@@ -3387,7 +3387,7 @@ function rmSetOffline(off){
   onlineStatus();
 }
 
-/* A Chromebook that sleeps on one wifi and wakes on another is the ordinary case, so
+/* A device that sleeps on one network and wakes on another is the ordinary case, so
    follow the browser's own signal both ways. Coming back online clears the flag
    hopefully rather than provably - the next create or join settles it. */
 (function watchNetwork(){
@@ -3490,8 +3490,8 @@ function rmWaitFor(code, colour){
   $('rmMine').onchange = ()=>{
     ccSetMine($('rmMine').checked);
     toast($('rmMine').checked
-      ? 'This Chromebook will remember you.'
-      : 'Closing the tab will now forget you on this Chromebook.');
+      ? 'This device will remember you.'
+      : 'Closing the tab will now forget you on this device.');
   };
   $('rmForget').onclick = ()=>{
     ccForget();
@@ -3500,7 +3500,7 @@ function rmWaitFor(code, colour){
     toast('Forgotten. The next person starts fresh.');
   };
 
-  /* A closed lid, a reload, a Chromebook that went to sleep: come back to the game
+  /* A closed lid, a reload, a device that went to sleep: come back to the game
      rather than to the menu. The seat is ours to rewrite, so rejoining is the same
      write as claiming it was. */
   (function resumeRoom(){
@@ -3515,7 +3515,7 @@ function rmWaitFor(code, colour){
 
 /* The GitHub transport is gone. Anything it left behind goes with it: cc_gh held a
    personal access token in plaintext with Issues read+write on a shared repo, and on a
-   cart Chromebook that is one devtools tab away from the next student. Nothing
+   shared device, one devtools tab away from the next person. Nothing
    replaces it - the anonymous refresh token that took its place is scoped to one
    throwaway project and grants a chess seat. */
 try{ localStorage.removeItem('cc_gh'); }catch(e){}

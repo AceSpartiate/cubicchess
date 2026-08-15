@@ -326,7 +326,7 @@ let pre2 = request({}, [['rooms/TRKN', {
 denySeat('F11 take a lobby seat dark only 2 minutes', pre2, 'TRKN', 'w', C, 'Eve', T + 120000);
 allowSeat('F12 take a lobby seat dark 6 minutes', pre2, 'TRKN', 'w', C, 'Eve', T + 360000);
 
-// F6/F13. A seat welded to one anonymous uid forever orphans a student whose Chromebook
+// F6/F13. A seat welded to one anonymous uid forever orphans a student whose device
 // was re-imaged or whose site data was cleared. Reclaim mid-game, but only after long
 // enough that it is not a griefing window.
 let mid = game();

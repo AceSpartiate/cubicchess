@@ -132,7 +132,7 @@ account, collaborator access, and a personal access token pasted into the game b
 every player. It is gone. Besides the signup burden it let any player post moves
 into any other player's game, because the reader checked that a move was *legal*
 and never *who wrote it* — and it kept a live token in plaintext in `localStorage`
-on shared Chromebooks. Loading the game now deletes that key.
+on shared devices. Loading the game now deletes that key.
 
 ## Before you change anything
 

@@ -133,7 +133,7 @@ else:
 ALLOWED_HOSTS = {
     "identitytoolkit.googleapis.com":
         "anonymous sign-in; under googleapis.com, which a Workspace district cannot "
-        "block without breaking its own Chromebooks",
+        "block without breaking its own devices",
     "securetoken.googleapis.com":
         "refreshing that token so a seat survives a reload",
 }
@@ -148,7 +148,19 @@ else:
     # The database host is built from a variable, so it never appears as a literal here.
     if "firebasedatabase.app" in s or "firebaseio.com" in s:
         print("  note  the Realtime Database host is the ONE domain in this design that "
-              "has not been tried from a student Chromebook")
+              "has not been tried from a student device")
+
+print("\n3b. The game does not name hardware it cannot see")
+# A student may be on a laptop, a tablet or a phone. Telling them about a Chromebook
+# when they are not holding one is wrong on the screen and slightly wrong about the
+# world - the game has no idea what it is running on and should not guess. Kept as a
+# check rather than a habit because the word crept into eight strings the first time.
+BRANDS = ["Chromebook", "chromebook", "iPad", "MacBook"]
+named = sorted({b for b in BRANDS if b in s})
+if named:
+    bad("hardware named in the page: %s - say \"device\"" % named)
+else:
+    ok("no hardware brand named")
 
 print("\n4. Every id the script reaches for exists")
 # Ids appear in static markup AND inside innerHTML strings - both are `id="x"` in this

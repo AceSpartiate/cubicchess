@@ -79,6 +79,24 @@ else:
             if extra > 0:
                 print("  ...   and %d more" % extra)
 
+print("\n2b. The two rule implementations agree with each other")
+# The gap this closes. The movement rules exist TWICE - the search engine, and the
+# display model's legalMoves() that the UI actually plays by - and MAINTENANCE.md says
+# they must agree. Everything above tests the ENGINE. Nothing tested the display model
+# at all, so perft could not have noticed it drifting: perft never runs it.
+if not HAVE_NODE:
+    skip("node not on PATH - the two rule implementations are unchecked against each other")
+else:
+    r = subprocess.run(["node", os.path.join(ROOT, "tools", "agree.mjs"), "25", "50"],
+                       capture_output=True, text=True, cwd=ROOT)
+    tail = (r.stdout.strip().splitlines() or [""])[-1]
+    if r.returncode == 0:
+        ok(tail)
+    elif r.returncode == 2:
+        skip("the headless harness could not load the page: " + (r.stderr.strip().splitlines() or [""])[0])
+    else:
+        bad("the engine and legalMoves() disagree:\n" + r.stdout[-1500:])
+
 print("\n3. Nothing is fetched from another host")
 # The whole point of vendoring three.js. A CDN this district blocks cost students
 # the board once already, and the failure looked like a broken game.

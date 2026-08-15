@@ -27,8 +27,19 @@ hand when you are diagnosing something.
 1. **Syntax.** Extract the main `<script>` and run `node --check` on it. A stray comma in the
    embedded `COACH_DATA` or `PUZZLE_LIB` will break the whole page silently otherwise.
 2. **Perft.** Extract the engine block, load it in Node, and confirm `perft(1)=136`, `perft(2)=18479`
-   from the start position. If these change, the engine's rules and the display model's `legalMoves`
-   have diverged — fix before shipping.
+   from the start position.
+
+   **This does NOT catch drift between the two rule implementations, and this document said for
+   a long time that it did.** perft measures the ENGINE. The display model's `legalMoves()` — the
+   rules the UI actually plays by — never executes during it, so the display model could have
+   drifted arbitrarily and every check would still have been green. What perft catches is a change
+   to the engine's own move generator.
+
+   The drift check is `node tools/agree.mjs`, added later: it loads the real page headless with
+   three.js and the DOM stubbed, uses the `?hooks` surface to reach `legalMoves()`, plays random
+   games, and compares the FULL legal-move set from both implementations at every ply. Run by
+   `check.py` as check 2b. Proven to catch a bishop losing its triagonals, a pawn losing its
+   step up a level, and a board one file narrower — each mutated in the display model only.
 3. **Puzzle validation.** Walk every Coach and library puzzle: each solution/reply move legal for
    the side on move, the final position matching its declared kind (real mate, or ≥2 material won),
    exactly one king per side, and (library) side-to-move parity matching the ply count.

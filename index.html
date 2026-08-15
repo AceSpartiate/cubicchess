@@ -1154,7 +1154,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260815-1553";
+const BUILD="20260815-1633";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -3647,7 +3647,8 @@ if (new URLSearchParams(location.search).has('hooks')){
     get gameOver(){ return gameOver; },
     get online(){ return {code:GH.issue, colour:GH.myColor, seen:GH.seen,
                           moves:RM.movesStr, err:GH.lastErr, mode:RM.mode, uid:RM.uid}; },
-    at:(x,y,z)=>{ const p=board[ID(x,y,z)]; return p?{t:p.type,c:p.color}:null; },
+    at:(x,y,z)=>{ const p=board[ID(x,y,z)]; return p?{t:p.type,c:p.color,moved:p.moved}:null; },
+    newGame:()=>{ gameMode='practice'; startGame(); },
     legal:(x,y,z)=>legalMoves(x,y,z),
     select, doMove, sync:()=>rmSync(false),
     rec:{add:recAdd, counts:recCounts, read:recRead, has:recHas}

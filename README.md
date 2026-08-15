@@ -40,7 +40,7 @@ then open `http://localhost:8131/`. `localStorage` is unreliable over `file://`,
 so opening `index.html` directly will silently fail to save Coach progress and
 settings — and you will spend an afternoon chasing a bug that is not there.
 
-It needs WebGL. Rendering, Practice, Competitive, the AI and all 140 puzzles need **no network at
+It needs WebGL. Rendering, Play, Coach, the AI and all 140 puzzles need **no network at
 all** — that is what vendoring three.js bought. Only online play reaches out, and when it cannot,
 the game says **Offline Play Only** and the other three modes carry on.
 
@@ -97,6 +97,8 @@ re-run the checks in `MAINTENANCE.md`.
 
 ## What the game does
 
+- **Three buttons.** Play, Coach, Play online. Which game you play is the next screen,
+  so a new variant never adds a button. Two taps to a board.
 - **Play vs AI or hot-seat.** Selectable strength; "off" gives two-player local play.
 - **Native 3D movement.** Every piece is generalized to three axes — see `ARCHITECTURE.md`.
 - **11 themes.** default, wooden, silver, green, pink, lightblue, bw, red, purple, orange, american.
@@ -123,9 +125,15 @@ Finished games are counted in the browser: five characters each, the room code p
 W, L or D, shown on the online panel. No account, no server node, nothing anyone else
 can read. The code is stored so that a reload cannot count a game twice.
 
-**With no connection the button reads "Offline Play Only"** and says so plainly.
-Practice, Competitive and Coach need no network at all — three of the four modes
-keep working, and the game does not pretend otherwise.
+**With no connection the button reads "Offline Play Only"** and says so plainly. Play
+and Coach need no network at all, so two of the three buttons carry on working and the
+game does not pretend otherwise.
+
+Practice and Competitive used to be two of four buttons on the home screen, which meant
+choosing before you had seen a board and restarting to change your mind. They were only
+ever three things — undo, the hint button, and threat markers — so they are one switch in
+Settings now, on by default, flippable mid-game. Online still forces them off: undo
+cannot mean anything once the other player has seen the move.
 
 The previous mode stored each game as an issue in a private GitHub repo, needing an
 account, collaborator access, and a personal access token pasted into the game by

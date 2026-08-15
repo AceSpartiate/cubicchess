@@ -1203,7 +1203,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260815-2249";
+const BUILD="20260815-2254";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1677,6 +1677,7 @@ const FLOOR_OFF = -0.46;   // tile plane / piece base offset inside a cell
 /* ---- lattice ---- */
 const levelGroups = [];
 let frameBox = null;
+let labelGroup = null;
 let glassMats = [];
 const themeMats = [];   // tile/grid/frame materials that a theme retints
 function buildLattice(){
@@ -1725,6 +1726,10 @@ function buildLattice(){
   const frameMat = new THREE.LineBasicMaterial({color:0x4d84bd, transparent:true, opacity:0.4});
   frameMat.userData.role = 'frame';
   themeMats.push(frameMat);
+  /* Only a game with levels wants a cage drawn round it. A flat board is its own
+     outline, and a box one unit high centred near the origin hangs in the air above a
+     board that sits at the bottom of that space. */
+  if (V.ny <= 1){ frameBox = null; return; }
   const box = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(V.nx,V.ny,V.nz)), frameMat);
   box.position.y = FLOOR_OFF+0.5;
   scene.add(box); frameBox = box;
@@ -1744,26 +1749,32 @@ function textSprite(txt, color, size){
 }
 const FILES='abcdefgh';
 function buildLabels(){
+  /* Rebuildable, like the lattice: this used to add a new group every time the variant
+     changed and never remove the old one, so labels piled up invisibly on top of each
+     other. */
+  if (labelGroup){ scene.remove(labelGroup); labelGroup = null; }
   const g = new THREE.Group();
-  for (let x=0;x<8;x++){
+  for (let x=0;x<V.nx;x++){
     const s = textSprite(FILES[x], '#6d86a6', 0.5);
     const p = W(x,0,0);
     s.position.set(p.x, p.y+FLOOR_OFF+0.1, -4.6);
     g.add(s);
   }
-  for (let z=0;z<8;z++){
+  for (let z=0;z<V.nz;z++){
     const s = textSprite(String(z+1), '#6d86a6', 0.5);
     const p = W(0,0,z);
     s.position.set(-4.6, p.y+FLOOR_OFF+0.1, p.z);
     g.add(s);
   }
-  for (let y=0;y<8;y++){
+  /* Level labels only when there ARE levels. On a one-board game these eight sprites
+     stacked up in empty air above the board with nothing to label. */
+  if (V.ny > 1) for (let y=0;y<V.ny;y++){
     const s = textSprite('L'+(y+1), '#57729a', 0.62);
     const p = W(0,y,0);
     s.position.set(-4.75, p.y+FLOOR_OFF+0.4, -4.75);
     g.add(s);
   }
-  scene.add(g);
+  scene.add(g); labelGroup = g;
 }
 
 /* ---- pieces ---- */
@@ -4053,6 +4064,7 @@ if (new URLSearchParams(location.search).has('hooks')){
                           moves:RM.movesStr, err:GH.lastErr, mode:RM.mode, uid:RM.uid}; },
     at:(x,y,z)=>{ const p=board[ID(x,y,z)]; return p?{t:p.type,c:p.color,moved:p.moved}:null; },
     newGame:()=>{ gameMode='play'; startGame(); },
+    scene:()=>({ levels: levelGroups.length, frame: !!frameBox, labels: !!labelGroup }),
     variant:(id)=>{ if (VARIANTS[id]) { V = VARIANTS[id]; startGame(); } return V.id; },
     /* board.slice() copies REFERENCES, and applyMove mutates p.moved on the shared
        object - so restoring the array alone puts every piece back with its first-move

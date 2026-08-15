@@ -97,6 +97,9 @@ re-run the checks in `MAINTENANCE.md`.
 
 ## What the game does
 
+- **A tutorial the first time you play each game.** Asked once per game, not once per
+  player — knowing the cube inside out tells you nothing about traditional chess here,
+  and vice versa. Some steps hold the board until you make the move they describe.
 - **Three buttons.** Play, Coach, Play online. Which game you play is the next screen,
   so a new variant never adds a button. Two taps to a board.
 - **Play vs AI or hot-seat.** Selectable strength; "off" gives two-player local play.

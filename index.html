@@ -146,6 +146,21 @@
      the `on` class. Both rules were dead and are gone. */
   #onlineState{float:right;font-size:9px;letter-spacing:.05em;color:var(--dim)}
 
+  /* The tutorial card. Bottom centre, out of the way of the HUD on the left. */
+  #tut{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:130;
+    display:none;max-width:34em;width:calc(100% - 32px);
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:14px 16px;backdrop-filter:blur(4px)}
+  #tut.on{display:block}
+  #tut p{margin:0 0 10px;font-size:13px;line-height:1.55;color:var(--ink)}
+  #tut .tutbtns{display:flex;gap:8px;align-items:center}
+  #tut button{padding:.4em 1.1em;font-size:12px;background:transparent;color:var(--ink);
+    border:1px solid var(--line);border-radius:6px;cursor:pointer}
+  #tut button:hover{border-color:var(--mint);color:var(--mint)}
+  #tut #tutSkip{margin-left:auto;opacity:.7}
+  /* When a step asks for a move, Next is not the way forward. */
+  #tut.await #tutNext{display:none}
+
   /* The room code, sized to be read across a classroom. */
   .ccmine{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:11px;color:var(--ink);cursor:pointer}
   .ccmine input{width:auto;margin:0}
@@ -319,6 +334,30 @@
   <code>index.html</code>.
 </div></div>
 
+<!-- The tutorial card. Sits over the board rather than in a modal, because every step
+     is about something the player is looking at. -->
+<div id="tut">
+  <p id="tutSay"></p>
+  <div class="tutbtns">
+    <button id="tutNext">Next</button>
+    <button id="tutSkip" class="ghost small">Skip</button>
+  </div>
+</div>
+
+<!-- Asked once per game, the first time someone plays it. -->
+<div class="modal" id="firstModal">
+  <div class="sheet">
+    <div class="mhead"><b id="firstTitle">First time?</b></div>
+    <div class="mstep">
+      <p class="mnote" id="firstSay"></p>
+      <div class="mbtns">
+        <button id="firstYes">Yes, show me</button>
+        <button id="firstNo" class="ghost">No, just play</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- The stale-build banner. Only ever shown after a reload has already been tried
      once and this copy is STILL old; see the BUILD block in the main script. -->
 <div id="stale"><b></b><button type="button">Load it now</button></div>
@@ -485,6 +524,7 @@
       <div class="setlbl">Move preview</div>
       <div class="setrow"><label for="preview">Preview &amp; confirm</label><input id="preview" type="checkbox" checked></div>
       <p class="mnote" id="aiNote" style="display:none">There is no computer opponent for this game yet — the one that exists only knows the cube. Play someone on this screen, or online.</p>
+      <div class="setrow"><label for="optTutorial">Show the tutorial for this game</label><button id="optTutorial" class="small ghost">Start</button></div>
       <div class="setrow"><label for="optHelpers">Show hints and let me take moves back</label><input id="optHelpers" type="checkbox" checked></div>
       <div class="setrow"><label for="opMove">Legal move</label><input id="opMove" type="range" min="0" max="100" value="40"></div>
       <div class="setrow"><label for="opCap">Capture</label><input id="opCap" type="range" min="0" max="100" value="100"></div>
@@ -1163,7 +1203,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260815-2243";
+const BUILD="20260815-2249";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1281,6 +1321,20 @@ const VARIANTS = {
     castles: true,
     engine: true,          // the Worker search engine speaks this variant and only this one
     ready: true,
+    /* Steps a first-time player is walked through. `do` is a move they must make before
+       the next step appears - reading is easy to skip past, moving the piece is not. */
+    tutorial: [
+      { say: 'This is one board, eight levels deep. The floor is Level 1 and the pieces start there — but every level above it is real, and you can move up into it.' },
+      { say: 'Drag to turn the board. Scroll to zoom. Try it now, then press Next.' },
+      { say: 'Pawns are the difference. A pawn moves one square forward like always — or one square STRAIGHT UP a level. Click the pawn in front of your king.',
+        look: [4,0,1] },
+      { say: 'See the four squares it can reach: one forward, two forward, one up, two up. Move it UP one level.',
+        do: { fx:4, fy:0, fz:1, tx:4, ty:1, tz:1 } },
+      { say: 'It is now on Level 2, defending squares nothing on the floor can reach. Pawns never move back down.' },
+      { say: 'Bishops are the other surprise. On a flat board a bishop is stuck on one colour forever. Here it also rides the true diagonal where all three directions change at once — which lets it reach every square on the board.' },
+      { say: 'Everything else you already know. Rooks slide along one axis, including straight up. Knights leap. The king moves one square in any of 26 directions.' },
+      { say: 'Win the way you always do: checkmate the king. That is the whole tutorial — play a game.' },
+    ],
   },
 
   /* The two that do not exist yet. They are listed here rather than in a separate
@@ -1333,6 +1387,17 @@ const VARIANTS = {
     castles: true,
     engine: false,       // the Worker engine is cubic-only, so this variant has no AI yet
     moveBits: { from: 6, to: 6, promo: 3 },
+    tutorial: [
+      { say: 'Ordinary chess, on one board. White moves first, then Black, and you take it in turns from there.' },
+      { say: 'Drag to turn the board, scroll to zoom. The white pieces are nearest you.' },
+      { say: 'Click the pawn in front of your king to see where it can go.', look: [4,0,1] },
+      { say: 'A pawn moves one square forward — or two on its very first move. Push it two squares.',
+        do: { fx:4, fy:0, fz:1, tx:4, ty:0, tz:3 } },
+      { say: 'Pawns capture differently from how they move: one square diagonally forward, never straight ahead.' },
+      { say: 'Knights jump in an L and are the only piece that can leap over others. Bishops go diagonally, rooks straight, and the queen does both.' },
+      { say: 'When your king is attacked it is in check, and you must get out of it. If you cannot, that is checkmate and the game is over.' },
+      { say: 'There is no computer opponent for this game yet — play someone sitting next to you, or online. That is the tutorial; go and play.' },
+    ],
     ready: true,         // perft 20 / 400 / 8902 / 197281, matching published numbers
   }
 };
@@ -2372,6 +2437,80 @@ function setMode(m){ gameMode = m; applyHelpers(); applyEngineAvailability(); }
 function openHome(){ gameMode=null; $('home').classList.add('on'); homeShowModes(); }
 function closeHome(){ $('home').classList.remove('on'); }
 
+/* ---------- the first-time tutorial ----------
+   Asked once per GAME, not once per player: someone who knows the cube inside out has
+   still never seen traditional chess here, and someone who plays flat chess every day
+   has never seen a pawn climb. Which games you have been offered lives in cc_tut.
+
+   A step is a sentence and, optionally, a move you have to make. `look` selects a piece
+   for you so the legal squares are already lit when the sentence mentions them; `do`
+   holds the board until that move is played, because reading is easy to skip past and
+   moving the piece is not. */
+let tutState = null;
+
+function tutSeen(){ try{ return (localStorage.getItem('cc_tut')||'').split(',').filter(Boolean); }catch(e){ return []; } }
+function tutMarkSeen(id){
+  const seen = tutSeen();
+  if (!seen.includes(id)) seen.push(id);
+  try{ localStorage.setItem('cc_tut', seen.join(',')); }catch(e){}
+}
+
+function tutOffer(id){
+  const v = VARIANTS[id];
+  if (!v || !v.tutorial || tutSeen().includes(id)) return false;
+  $('firstTitle').textContent = 'First time playing ' + v.label + '?';
+  $('firstSay').textContent = v.ny > 1
+    ? 'It moves differently from the chess you know. A quick walk through is about a minute.'
+    : 'A quick walk through the basics takes about a minute.';
+  $('firstModal').classList.add('on');
+  return true;
+}
+
+function tutStart(){
+  tutState = { i: -1 };
+  $('tut').classList.add('on');
+  tutAdvance();
+}
+function tutEnd(){
+  tutState = null;
+  $('tut').classList.remove('on');
+  $('tut').classList.remove('await');
+  clearHighlights();
+  selected = null; selMoves = [];
+  drawSelection();
+  refreshHUD();
+}
+function tutAdvance(){
+  if (!tutState) return;
+  const steps = V.tutorial || [];
+  tutState.i++;
+  if (tutState.i >= steps.length){ tutEnd(); toast('That is the tutorial. Have a game.'); return; }
+  const st = steps[tutState.i];
+  $('tutSay').textContent = st.say;
+  $('tutNext').textContent = (tutState.i === steps.length-1) ? 'Finish' : 'Next';
+  $('tut').classList.toggle('await', !!st.do);
+  if (st.look){ select(st.look[0], st.look[1], st.look[2]); }
+  else if (st.do){ select(st.do.fx, st.do.fy, st.do.fz); }
+}
+
+/* Called from doMove before anything else happens. Returns true when the tutorial has
+   taken the move - either because it was the one asked for, or because it was not. */
+function tutHandleMove(mv){
+  const st = (V.tutorial || [])[tutState.i];
+  if (!st || !st.do) return false;                 // this step was not waiting for one
+  const d = st.do;
+  if (mv.fx!==d.fx || mv.fy!==d.fy || mv.fz!==d.fz ||
+      mv.tx!==d.tx || mv.ty!==d.ty || mv.tz!==d.tz){
+    toast('Not that one — the squares to move to are lit up.');
+    return true;
+  }
+  history.push(mv);
+  lastAI = null;
+  applyMove(mv.fx,mv.fy,mv.fz,mv.tx,mv.ty,mv.tz,true,mv.promo);
+  tutAdvance();
+  return true;
+}
+
 /* ---------- the game picker ----------
    Play, Coach and Play online all lead here first. What they do with the answer is
    held in `intent` until a game is chosen, so the three paths share one screen and one
@@ -2428,6 +2567,7 @@ function homeChose(key){
   if (what === 'coach'){ reqId++; thinking=false; openCoach(); return; }
   if (what === 'online'){ openModal(); return; }
   closeHome(); setMode('play'); reqId++; thinking=false; startGame();
+  tutOffer(key);          // only here: Coach already teaches, and online has someone waiting
 }
 
 /* ---- threats to your pieces (practice only) ----
@@ -2701,6 +2841,7 @@ function doMove(tx,ty,tz,promo){
   const m = selMoves.find(v=>v.x===tx&&v.y===ty&&v.z===tz);
   if (!m) return;
   const mv = {fx:selected.x,fy:selected.y,fz:selected.z,tx,ty,tz,promo:promo||null};
+  if (tutState){ if (tutHandleMove(mv)) return; }    // a tutorial step may be waiting for one
   if (coachState){ coachHandleMove(mv); return; }   // coach puzzle: check against the solution
   if (onlineActive()){
     if (!myTurnOnline()) return;                 // not your move
@@ -3842,11 +3983,21 @@ function homeIsOpen(){ const el=document.getElementById('home'); return el && el
 $('modePlay').onclick  = ()=> homePick('play');
 $('modeCoach').onclick = ()=> homePick('coach');
 $('homeGamesBack').onclick = homeShowModes;
+$('tutNext').onclick = tutAdvance;
+$('tutSkip').onclick = ()=>{ tutEnd(); toast('Skipped. Settings has it again if you want it.'); };
+$('firstYes').onclick = ()=>{ $('firstModal').classList.remove('on'); tutMarkSeen(V.id); tutStart(); };
+$('firstNo').onclick  = ()=>{ $('firstModal').classList.remove('on'); tutMarkSeen(V.id); };
 $('coachBack').onclick = renderCatGrid;
 $('coachExit').onclick = ()=>{ exitCoach(); };
 $('hint').onclick = requestHint;
 $('settings-btn').onclick = ()=> $('setModal').classList.add('on');
 $('optHelpers').onchange = e => setHelpers(e.target.checked);
+$('optTutorial').onclick = ()=>{
+  $('setModal').classList.remove('on');
+  if (!V.tutorial){ toast('No tutorial for this game yet.'); return; }
+  if (gameMode !== 'play' || onlineActive()){ toast('Start a game first — the tutorial uses the board.'); return; }
+  startGame(); tutStart();
+};
 $('setClose').onclick = ()=> $('setModal').classList.remove('on');
 $('setDone').onclick  = ()=> $('setModal').classList.remove('on');
 $('home-btn').onclick = ()=>{

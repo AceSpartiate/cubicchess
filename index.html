@@ -147,6 +147,9 @@
   #onlineState{float:right;font-size:9px;letter-spacing:.05em;color:var(--dim)}
 
   /* The room code, sized to be read across a classroom. */
+  .ccmine{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:11px;color:var(--ink);cursor:pointer}
+  .ccmine input{width:auto;margin:0}
+  #rmMineWhy{margin-top:6px}
   #rmBig{font-family:var(--mono);font-size:44px;letter-spacing:.22em;text-align:center;
     color:var(--mint);padding:14px 0 6px;text-indent:.22em}
 
@@ -504,6 +507,10 @@
       </div>
       <div class="merr" id="rmErr"></div>
       <p class="mnote" id="rmRecord" style="margin-top:12px"></p>
+      <label class="ccmine"><input type="checkbox" id="rmMine"> This Chromebook is just mine</label>
+      <p class="mnote" id="rmMineWhy">Leave this unticked on a shared or cart Chromebook: closing the tab
+        then forgets you, so the next person does not pick up your name, your record or your seat.</p>
+      <button id="rmForget" class="ghost small" style="margin-top:8px">Forget me on this Chromebook</button>
     </div>
 
     <div class="mstep" id="rmWait" style="display:none">
@@ -1147,7 +1154,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260811-2047";
+const BUILD="20260815-1553";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -2937,6 +2944,58 @@ function rmCode(){
   for (let i=0;i<4;i++) s += RM_ALPHA[a[i] % RM_ALPHA.length];
   return s;
 }
+/* ---------- where a player's own data lives ----------
+   THE BUG THIS FIXES. The anonymous refresh token went into localStorage
+   unconditionally and nothing ever removed it. On a cart Chromebook the next child to
+   open the page WAS the previous child: same uid, so their seat in a live game, their
+   name, and their resumable room all came along. Nobody had to do anything wrong for
+   that to happen - closing the lid and handing the machine on was enough.
+
+   So the default is sessionStorage, which a closed tab forgets, and localStorage is an
+   opt-in for someone who says the device is theirs. The flag is a property of the
+   DEVICE, not of a player, so it stays in localStorage where it belongs and discloses
+   nothing about anyone.
+
+   ccGet reads BOTH stores, newest first, so a device that was marked "mine" before this
+   change keeps working rather than silently losing its identity on upgrade. */
+function ccMine(){ try{ return localStorage.getItem('cc_mine') === '1'; }catch(e){ return false; } }
+function ccGet(k){
+  try{ const v = sessionStorage.getItem(k); if (v !== null) return v; }catch(e){}
+  try{ return localStorage.getItem(k); }catch(e){}
+  return null;
+}
+function ccSet(k, v){
+  try{
+    if (ccMine()){ localStorage.setItem(k, v); sessionStorage.removeItem(k); }
+    else { sessionStorage.setItem(k, v); localStorage.removeItem(k); }
+  }catch(e){}
+}
+function ccDel(k){
+  try{ sessionStorage.removeItem(k); }catch(e){}
+  try{ localStorage.removeItem(k); }catch(e){}
+}
+/* Marking a device yours moves what is already stored, rather than stranding it in the
+   store it happens to be in. */
+function ccSetMine(on){
+  const keys = ['cc_rm','cc_room','cc_nick'];
+  const held = keys.map(k => [k, ccGet(k)]);
+  try{
+    if (on) localStorage.setItem('cc_mine','1');
+    else localStorage.removeItem('cc_mine');
+  }catch(e){}
+  for (const [k, v] of held){ if (v !== null) ccSet(k, v); }
+}
+/* Hand the machine to the next person cleanly. Clears identity AND the things tied to
+   it, including the record and Coach progress - if you are wiping yourself off a shared
+   Chromebook, a half-finished puzzle set is exactly the kind of thing you meant. */
+function ccForget(){
+  rmStop();
+  RM.tok = null; RM.uid = null;
+  for (const k of ['cc_rm','cc_room','cc_nick','cc_rec']) ccDel(k);
+  try{ localStorage.removeItem('cc_coach'); }catch(e){}
+  try{ localStorage.removeItem('cc_mine'); }catch(e){}
+}
+
 /* ---------- the record ----------
    Every finished online game appends five characters to one localStorage string: the
    four-letter room code, then W, L or D. Counts are a scan. There is no server node,
@@ -2956,7 +3015,7 @@ function rmCode(){
    stopped reading. Tidier here loses the safety net. */
 const REC_MAX = 200;                          // games kept; 200 * 5 chars = 1KB
 
-function recRead(){ try{ return localStorage.getItem('cc_rec') || ''; }catch(e){ return ''; } }
+function recRead(){ return ccGet('cc_rec') || ''; }
 function recHas(s, code){
   for (let i=0; i+5<=s.length; i+=5) if (s.slice(i,i+4) === code) return true;
   return false;
@@ -2967,7 +3026,7 @@ function recAdd(code, r){
   if (recHas(s, code)) return;
   s += code + r;
   if (s.length > REC_MAX*5) s = s.slice(s.length - REC_MAX*5);
-  try{ localStorage.setItem('cc_rec', s); }catch(e){}
+  ccSet('cc_rec', s);
   recShow();
 }
 function recCounts(){
@@ -2993,7 +3052,7 @@ function rmPlies(str){
 /* ---------- identity: an anonymous token, kept so a refresh keeps your seat ---------- */
 async function rmAuth(){
   if (RM.tok) return;
-  let saved=null; try{ saved=JSON.parse(localStorage.getItem('cc_rm')||'null'); }catch(e){}
+  let saved=null; try{ saved=JSON.parse(ccGet('cc_rm')||'null'); }catch(e){}
   if (saved && saved.refresh){
     try{
       const r = await fetch('https://securetoken.googleapis.com/v1/token?key='+FB.key, {
@@ -3002,7 +3061,7 @@ async function rmAuth(){
       if (r.ok){
         const j = await r.json();
         RM.tok=j.id_token; RM.uid=j.user_id;
-        try{ localStorage.setItem('cc_rm', JSON.stringify({refresh:j.refresh_token, uid:j.user_id})); }catch(e){}
+        ccSet('cc_rm', JSON.stringify({refresh:j.refresh_token, uid:j.user_id}));
         return;
       }
     }catch(e){}
@@ -3021,7 +3080,7 @@ async function rmAuth(){
   if (!r.ok) throw new Error(RM_UNREACHABLE);
   const j = await r.json();
   RM.tok=j.idToken; RM.uid=j.localId;
-  try{ localStorage.setItem('cc_rm', JSON.stringify({refresh:j.refreshToken, uid:j.localId})); }catch(e){}
+  ccSet('cc_rm', JSON.stringify({refresh:j.refreshToken, uid:j.localId}));
 }
 
 async function rmPut(path, val){
@@ -3069,7 +3128,7 @@ async function rmJoin(code, nick){
 async function rmStart(code, colour){
   GH.issue=code; GH.myColor=colour; GH.seen=0;
   RM.movesStr=''; RM.ended=false;
-  try{ localStorage.setItem('cc_room', JSON.stringify({code, colour})); }catch(e){}
+  ccSet('cc_room', JSON.stringify({code, colour}));
   $('ai').value='off';
   closeModal(); closeHome();
   if (gameMode===null) setMode('competitive');
@@ -3087,7 +3146,7 @@ function rmStop(){
   if (RM.poll){ clearInterval(RM.poll); RM.poll=null; }
   if (RM.beat){ clearInterval(RM.beat); RM.beat=null; }
   RM.mode=''; RM.movesStr='';
-  try{ localStorage.removeItem('cc_room'); }catch(e){}
+  ccDel('cc_room');
 }
 
 function rmBeat(){
@@ -3340,7 +3399,7 @@ function rmWaitFor(code, colour){
 {
   const nickOf = ()=> ($('rmNick').value||'').trim().slice(0,12);
   const rmErr  = m => { $('rmErr').textContent = m||''; };
-  const remember = n => { try{ localStorage.setItem('cc_nick', n); }catch(e){} };
+  const remember = n => ccSet('cc_nick', n);
 
   $('rmNew').onclick = async ()=>{
     rmErr('');
@@ -3376,18 +3435,32 @@ function rmWaitFor(code, colour){
     rmShow('rmStart');
   };
 
-  try{ const n=localStorage.getItem('cc_nick'); if (n) $('rmNick').value=n; }catch(e){}
+  { const n=ccGet('cc_nick'); if (n) $('rmNick').value=n; }
+
+  $('rmMine').checked = ccMine();
+  $('rmMine').onchange = ()=>{
+    ccSetMine($('rmMine').checked);
+    toast($('rmMine').checked
+      ? 'This Chromebook will remember you.'
+      : 'Closing the tab will now forget you on this Chromebook.');
+  };
+  $('rmForget').onclick = ()=>{
+    ccForget();
+    $('rmNick').value=''; $('rmMine').checked=false; recShow();
+    closeModal();
+    toast('Forgotten. The next person starts fresh.');
+  };
 
   /* A closed lid, a reload, a Chromebook that went to sleep: come back to the game
      rather than to the menu. The seat is ours to rewrite, so rejoining is the same
      write as claiming it was. */
   (function resumeRoom(){
-    let s=null; try{ s=JSON.parse(localStorage.getItem('cc_room')||'null'); }catch(e){}
+    let s=null; try{ s=JSON.parse(ccGet('cc_room')||'null'); }catch(e){}
     if (!s || !s.code || !s.colour) return;
     rmAuth().then(()=> rmGet('rooms/'+s.code+'/seats/'+s.colour)).then(seat=>{
       if (typeof seat==='string' && seat.indexOf(RM.uid+':')===0) return rmStart(s.code, s.colour);
-      try{ localStorage.removeItem('cc_room'); }catch(e){}
-    }).catch(()=>{ try{ localStorage.removeItem('cc_room'); }catch(e){} });
+      ccDel('cc_room');
+    }).catch(()=>{ ccDel('cc_room'); });
   })();
 }
 

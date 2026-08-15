@@ -126,20 +126,68 @@ if missing:
 else:
     ok("all %d referenced ids exist" % len(wanted))
 
+# AND THE OTHER DIRECTION, which is the half that was missing. The check above catches a
+# script reaching for a control that is not there. It says nothing about a control that
+# IS there and that no script ever touches - a button a player can press that does
+# nothing at all. Two of those shipped in one commit: the markup for a checkbox and a
+# button landed while the edit adding their handlers silently matched nothing.
+#
+# Only INTERACTIVE elements are required to be wired. Plenty of ids exist for styling or
+# for a <label>, and demanding a handler for those would be noise.
+# Membership is tested against every quoted string in the SCRIPT blocks, not against the
+# getElementById/$() calls alone. Five controls are wired through
+#   [['opMove','move'], ...].forEach(([id,cat]) => { $(id)... })
+# which no call-site regex can see, and calling those dead would have been a false alarm
+# that teaches everyone to ignore this check. Searching the script text keeps the
+# question honest: does this id appear anywhere the code could be using it?
+script_text = "\n".join(body for _, body in BLOCKS)
+script_literals = set(re.findall(r'["\']([A-Za-z0-9_-]+)["\']', script_text))
+controls = set()
+for m in re.finditer(r'<(button|input|select|textarea)\b([^>]*)>', s, re.I):
+    idm = re.search(r'\bid\s*=\s*["\']([A-Za-z0-9_-]+)["\']', m.group(2))
+    if idm:
+        controls.add(idm.group(1))
+dead = sorted(c for c in controls if c not in wanted and c not in script_literals)
+if dead:
+    bad("control(s) in the markup that no script ever reaches for - a player can press "
+        "them and nothing happens: %s" % dead)
+else:
+    ok("all %d interactive controls are wired" % len(controls))
+
 print("\n5. Every storage key is both written and read")
 # A key written and never read loses progress silently; read and never written is a
 # feature that never restores. Both have shipped in projects like this one.
-for api in ("localStorage", "sessionStorage"):
-    wrote = set(re.findall(api + r'\.setItem\(\s*["\']([^"\']+)["\']', s))
-    read  = set(re.findall(api + r'\.getItem\(\s*["\']([^"\']+)["\']', s))
-    gone  = set(re.findall(api + r'\.removeItem\(\s*["\']([^"\']+)["\']', s))
+# Three accessors, not two. Per-player data goes through ccGet/ccSet/ccDel, which pick
+# sessionStorage or localStorage from the "this device is mine" flag - so a key reached
+# that way is invisible to a scan of the raw APIs, and this check would have quietly
+# stopped covering cc_rm, cc_room, cc_nick and cc_rec the moment they moved.
+ACCESSORS = [
+    ("localStorage",   r'localStorage\.setItem',   r'localStorage\.getItem',   r'localStorage\.removeItem'),
+    ("sessionStorage", r'sessionStorage\.setItem', r'sessionStorage\.getItem', r'sessionStorage\.removeItem'),
+    ("cc* (per-player)", r'ccSet', r'ccGet', r'ccDel'),
+]
+for label, wpat, rpat, dpat in ACCESSORS:
+    wrote = set(re.findall(wpat + r'\(\s*["\']([^"\']+)["\']', s))
+    read  = set(re.findall(rpat + r'\(\s*["\']([^"\']+)["\']', s))
+    gone  = set(re.findall(dpat + r'\(\s*["\']([^"\']+)["\']', s))
     # removeItem alone is legitimate: it is how a key gets retired.
     w_only = sorted(wrote - read)
     r_only = sorted(read - wrote - gone)
-    if w_only: bad("%s key written but never read: %s" % (api, w_only))
-    if r_only: bad("%s key read but never written: %s" % (api, r_only))
+    if w_only: bad("%s key written but never read: %s" % (label, w_only))
+    if r_only: bad("%s key read but never written: %s" % (label, r_only))
     if not w_only and not r_only:
-        ok("%s keys balanced (%s)" % (api, ", ".join(sorted(wrote | read)) or "none"))
+        ok("%s keys balanced (%s)" % (label, ", ".join(sorted(wrote | read)) or "none"))
+
+# A per-player key must not ALSO be touched through the raw API, or half its accesses
+# ignore the shared-device flag and the bug comes back through the side door.
+PLAYER_KEYS = {"cc_rm", "cc_room", "cc_nick", "cc_rec"}
+raw = set(re.findall(r'(?:local|session)Storage\.(?:set|get|remove)Item\(\s*["\']([^"\']+)["\']', s))
+leaked = sorted(PLAYER_KEYS & raw)
+if leaked:
+    bad("per-player key(s) reached through the raw storage API, bypassing the "
+        "shared-device flag: %s - use ccGet/ccSet/ccDel" % leaked)
+else:
+    ok("no per-player key bypasses the accessor")
 
 print("\n6. The vendored library is actually there")
 tag = re.search(r'<script src="([^"]+)"></script>', s)

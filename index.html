@@ -1220,7 +1220,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260816-0351";
+const BUILD="20260816-0406";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1706,7 +1706,11 @@ scene.add(new THREE.HemisphereLight(0x9fc4ff, 0x0a1020, 0.85));
 const key = new THREE.DirectionalLight(0xffffff, 0.85); key.position.set(7,12,6); scene.add(key);
 const fill = new THREE.DirectionalLight(0x7fb4ff, 0.4); fill.position.set(-8,-4,-6); scene.add(fill);
 
-const W = (x,y,z) => new THREE.Vector3(x-3.5, y-3.5, z-3.5);
+/* Where a cell sits in the world, centred on whatever lattice the variant actually has.
+   This was three literal 3.5s, which is right for a cube eight on a side and wrong for
+   everything else - tri-dimensional chess is six files by ten ranks by three levels. */
+const W = (x,y,z) => new THREE.Vector3(
+  x - (V.nx-1)/2, y - (V.ny-1)/2, z - (V.nz-1)/2);
 const FLOOR_OFF = -0.46;   // tile plane / piece base offset inside a cell
 
 /* ---- lattice ---- */
@@ -1726,6 +1730,10 @@ function buildLattice(){
     const g = new THREE.Group();
     const base = y===0 ? 1.0 : 0.06;   // floor solid; levels 2-8 extremely faint
     for (let x=0;x<V.nx;x++) for (let z=0;z<V.nz;z++){
+      /* A board may have holes. Cubic and traditional fill their lattice completely, so
+         this never fired until tri-dimensional chess, whose 64 squares are scattered
+         through a 6x3x10 box - most of that box is air and must not be tiled. */
+      if (!V.inside(x,y,z)) continue;
       const dark = (x+z)%2===1;
       const m = new THREE.MeshBasicMaterial({
         color: dark ? 0x18304d : 0x8fb6dd,
@@ -1742,10 +1750,24 @@ function buildLattice(){
       const p = W(x,y,z); t.position.set(p.x, p.y+FLOOR_OFF, p.z);
       g.add(t);
     }
-    const pts=[];
-    for (let i=0;i<=8;i++){
-      pts.push(new THREE.Vector3(-4+i,0,-4), new THREE.Vector3(-4+i,0,4));
-      pts.push(new THREE.Vector3(-4,0,-4+i), new THREE.Vector3(4,0,-4+i));
+    /* One outline per cell that exists, not a ruled 8x8 grid. A ruled grid is the wrong
+       size on a board that is not eight squares on a side, and on a board with holes it
+       rules lines straight across the gaps.
+       Shared edges are emitted ONCE. These lines are additively blended, so an edge
+       drawn twice is a brighter edge - and every interior edge on the board is shared. */
+    const pts=[], seen=new Set();
+    const edge = (ax,az,bx,bz) => {
+      const k = (ax<bx || (ax===bx && az<=bz)) ? ax+','+az+'|'+bx+','+bz
+                                               : bx+','+bz+'|'+ax+','+az;
+      if (seen.has(k)) return;
+      seen.add(k);
+      pts.push(new THREE.Vector3(ax,0,az), new THREE.Vector3(bx,0,bz));
+    };
+    for (let x=0;x<V.nx;x++) for (let z=0;z<V.nz;z++){
+      if (!V.inside(x,y,z)) continue;
+      const c = W(x,y,z);
+      const x0=c.x-0.5, x1=c.x+0.5, z0=c.z-0.5, z1=c.z+0.5;
+      edge(x0,z0,x1,z0); edge(x1,z0,x1,z1); edge(x1,z1,x0,z1); edge(x0,z1,x0,z0);
     }
     const lm = new THREE.LineBasicMaterial({color:0x3d6f9e, transparent:true, opacity:(y===0?0.55:0.04), blending:THREE.AdditiveBlending, depthWrite:false});
     lm.userData.base = (y===0?0.55:0.04);
@@ -1789,27 +1811,41 @@ function buildLabels(){
      other. */
   if (labelGroup){ scene.remove(labelGroup); labelGroup = null; }
   const g = new THREE.Group();
+  /* Just outside whatever size the board is, rather than just outside a board eight
+     squares on a side. These were literal -4.6s. */
+  const lo = W(0,0,0), hi = W(V.nx-1, V.ny-1, V.nz-1);
+  const xEdge = lo.x - 1.1, zEdge = lo.z - 1.1;
+  /* A variant may name its own files and ranks. Tri-dimensional chess numbers ranks
+     from 0 and uses six files, so neither default survives it. */
+  const fileName = V.fileName || (x => FILES[x]);
+  const rankName = V.rankName || (z => String(z+1));
+  /* A file or rank holding no square on any level gets no label - on a board with holes
+     that is a letter floating beside empty air. */
+  const anyX = x => { for (let y=0;y<V.ny;y++) for (let z=0;z<V.nz;z++) if (V.inside(x,y,z)) return true; return false; };
+  const anyZ = z => { for (let y=0;y<V.ny;y++) for (let x=0;x<V.nx;x++) if (V.inside(x,y,z)) return true; return false; };
   for (let x=0;x<V.nx;x++){
-    const s = textSprite(FILES[x], '#6d86a6', 0.5);
+    if (!anyX(x)) continue;
+    const s = textSprite(fileName(x), '#6d86a6', 0.5);
     const p = W(x,0,0);
-    s.position.set(p.x, p.y+FLOOR_OFF+0.1, -4.6);
+    s.position.set(p.x, p.y+FLOOR_OFF+0.1, zEdge);
     g.add(s);
   }
   for (let z=0;z<V.nz;z++){
-    const s = textSprite(String(z+1), '#6d86a6', 0.5);
+    if (!anyZ(z)) continue;
+    const s = textSprite(rankName(z), '#6d86a6', 0.5);
     const p = W(0,0,z);
-    s.position.set(-4.6, p.y+FLOOR_OFF+0.1, p.z);
+    s.position.set(xEdge, p.y+FLOOR_OFF+0.1, p.z);
     g.add(s);
   }
   /* Level labels only when there ARE levels. On a one-board game these eight sprites
      stacked up in empty air above the board with nothing to label. */
   if (V.ny > 1) for (let y=0;y<V.ny;y++){
-    const s = textSprite('L'+(y+1), '#57729a', 0.62);
+    const s = textSprite(V.levelName ? V.levelName(y) : 'L'+(y+1), '#57729a', 0.62);
     const p = W(0,y,0);
-    /* Far corner, not near. These used to sit at z=-4.75, which was behind the camera
-       when the board faced Black and is straight through the middle of the board now
-       that it faces White. The far-left corner is out of the way from either side. */
-    s.position.set(4.75, p.y+FLOOR_OFF+0.4, 4.75);
+    /* Far corner, not near. These used to sit at the -x,-z corner, which was behind the
+       camera when the board faced Black and is straight through the middle of the board
+       now that it faces White. Diagonally opposite the eye is clear from either side. */
+    s.position.set(hi.x + 1.25, p.y+FLOOR_OFF+0.4, hi.z + 1.25);
     g.add(s);
   }
   scene.add(g); labelGroup = g;
@@ -2209,7 +2245,16 @@ let selMoves = [];
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 
-function sqName(x,y,z){ return FILES[x] + (z+1) + '·L' + (y+1); }
+/* A square's name comes from the variant, not from this function's assumptions. Tri-
+   dimensional chess has six files and numbers its ranks from 0, so both defaults are
+   wrong there. The level is only named on a game that HAS levels - traditional chess
+   was writing "e2·L1" in its move list, on a board with one level. */
+function sqName(x,y,z){
+  const f = V.fileName ? V.fileName(x) : FILES[x];
+  const r = V.rankName ? V.rankName(z) : String(z+1);
+  if (V.ny <= 1) return f + r;
+  return f + r + '·' + (V.levelName ? V.levelName(y) : 'L' + (y+1));
+}
 const NAMES = {p:'Pawn',r:'Rook',n:'Knight',b:'Bishop',q:'Queen',k:'King'};
 
 let pending = null;     // {x,y,z,cap,castle,cover}
@@ -4050,7 +4095,11 @@ const homeBoard = (function(){
   hscene.add(root);
   const hmats = [];                          // {mesh, role} for theme retint
 
-  // rebuild the lattice exactly as buildLattice() does, into `root`
+  /* Rebuild the lattice into `root`. This decoration is a fixed 8x8x8 cube and is NOT
+     the board being played, so it must place its own cells: W() centres on the ACTIVE
+     variant's lattice, and reading it here drew the menu cube stretched and off-centre
+     whenever the last game played was not the cube. */
+  const HW = (x,y,z) => new THREE.Vector3(x-3.5, y-3.5, z-3.5);
   for (let y=0;y<8;y++){
     const base = y===0 ? 1.0 : 0.06;   // floor solid; levels 2-8 extremely faint
     for (let x=0;x<8;x++) for (let z=0;z<8;z++){
@@ -4061,7 +4110,7 @@ const homeBoard = (function(){
         depthWrite:false, side:THREE.DoubleSide });
       const t = new THREE.Mesh(new THREE.PlaneGeometry(1.0,1.0), m);
       t.rotation.x = -Math.PI/2;
-      const p = W(x,y,z); t.position.set(p.x, p.y+FLOOR_OFF, p.z);
+      const p = HW(x,y,z); t.position.set(p.x, p.y+FLOOR_OFF, p.z);
       root.add(t); hmats.push({mesh:m, role: dark?'tileDark':'tileLight', lvl:base});
     }
     const pts=[];
@@ -4071,7 +4120,7 @@ const homeBoard = (function(){
     }
     const lm = new THREE.LineBasicMaterial({color:0x3d6f9e, transparent:true, opacity:(y===0?0.55:0.04), blending:THREE.AdditiveBlending, depthWrite:false});
     const grid = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), lm);
-    grid.position.y = W(0,y,0).y + FLOOR_OFF + 0.008;
+    grid.position.y = HW(0,y,0).y + FLOOR_OFF + 0.008;
     root.add(grid); hmats.push({mesh:lm, role:'grid'});
   }
   const frameMat = new THREE.LineBasicMaterial({color:0x4d84bd, transparent:true, opacity:0.4});

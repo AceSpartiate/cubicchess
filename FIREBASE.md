@@ -164,6 +164,40 @@ request. None was findable by reading, and none was findable in the Playground.
 so the rules have a `uid` to check, with no signup, no email and no password. It is
 the closest honest version of "the game makes the account behind the scenes."
 
+## 4b. Optional sign-in, and the one console step it needs
+
+Signing in is optional and buys exactly one thing: the name a player uses and their
+record follow them to another device, in `users/$uid`. Room codes never need it.
+
+**Email/password** needs only **Sign-in method → Email/Password → Enable**. Nothing
+else. Firebase accepts synthetic addresses, so a student who has no email can be given
+`someone@cubicchess.invalid` and it works — `.invalid` is reserved by RFC 2606 and can
+never be a real domain, so an address made this way cannot collide with a real person's.
+
+**Google** needs a step the console does not do for you. Enabling
+**Sign-in method → Google** creates an OAuth web client, but that client does not
+list this game's address as somewhere it may return to, so sign-in fails with
+`redirect_uri_mismatch` until you add it:
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → the same project →
+   **APIs & Services** → **Credentials**.
+2. Under **OAuth 2.0 Client IDs**, open the one named *Web client (auto created by
+   Google Service)*.
+3. **Authorised JavaScript origins** → add `https://acespartiate.github.io`.
+4. **Authorised redirect URIs** → add `https://acespartiate.github.io/cubicchess/`.
+   The trailing slash matters; it must match the page's own address exactly.
+5. Copy the **Client ID** and paste it into `FB.gid` in `index.html`.
+
+**Until `FB.gid` is set, the "Continue with Google" button is not rendered at all**,
+rather than rendered and broken. That is deliberate: a button that fails when pressed
+is worse than a button that is not there.
+
+The game redirects to `accounts.google.com` rather than loading Google's sign-in
+library, because a `<script src>` on a third-party host is exactly the failure that
+vendoring three.js removed. `check.py` names `accounts.google.com` in `NAV_HOSTS` with
+that reasoning; a filter blocking it costs Google sign-in only, and email/password and
+room codes carry on.
+
 ## 5. Register the web app and collect two strings
 
 1. Gear icon → **Project settings** → **General**.

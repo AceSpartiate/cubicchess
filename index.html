@@ -178,6 +178,10 @@
   .ccmine{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:11px;color:var(--ink);cursor:pointer}
   .ccmine input{width:auto;margin:0}
   #rmMineWhy{margin-top:6px}
+  .authstrip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;
+    padding-top:10px;border-top:1px solid var(--line)}
+  .authstrip .mnote{margin:0;flex:1 1 150px}
+  .authstrip button{flex:0 0 auto}
   #rmBig{font-family:var(--mono);font-size:44px;letter-spacing:.22em;text-align:center;
     color:var(--mint);padding:14px 0 6px;text-indent:.22em}
 
@@ -573,10 +577,35 @@
       </div>
       <div class="merr" id="rmErr"></div>
       <p class="mnote" id="rmRecord" style="margin-top:12px"></p>
+      <div class="authstrip">
+        <span class="mnote" id="rmWho">Your name and record stay on this device.</span>
+        <button id="rmSignInBtn" class="ghost small">Sign in</button>
+        <button id="rmSignOutBtn" class="ghost small" style="display:none">Sign out</button>
+      </div>
       <label class="ccmine"><input type="checkbox" id="rmMine"> This device is just mine</label>
       <p class="mnote" id="rmMineWhy">Leave this unticked on a shared device: closing the tab
         then forgets you, so the next person does not pick up your name, your record or your seat.</p>
       <button id="rmForget" class="ghost small" style="margin-top:8px">Forget me on this device</button>
+    </div>
+
+    <div class="mstep" id="rmAuthStep" style="display:none">
+      <p class="mnote">Signing in is optional, and it buys exactly one thing: your name and
+        your record follow you to any device you sign in on. Room codes work without it.</p>
+      <label>Email</label>
+      <input id="rmEmail" type="email" autocomplete="email" spellcheck="false" placeholder="you@example.com">
+      <label style="margin-top:12px">Password <span class="dim">at least six characters</span></label>
+      <input id="rmPass" type="password" autocomplete="current-password">
+      <div class="mbtns">
+        <button id="rmDoSignIn">Sign in</button>
+        <button id="rmDoCreate" class="ghost">Create account</button>
+      </div>
+      <div class="mbtns" id="rmGoogleRow" style="display:none;margin-top:10px">
+        <button id="rmGoogle" class="ghost">Continue with Google</button>
+      </div>
+      <div class="merr" id="rmAuthErr"></div>
+      <p class="mnote">Your password is sent to Google's sign-in service and never stored by
+        this game. Nothing you do here is visible to anyone else, and no score reaches a teacher.</p>
+      <div class="mbtns"><button id="rmAuthBack" class="ghost small">Back</button></div>
     </div>
 
     <div class="mstep" id="rmWait" style="display:none">
@@ -1220,7 +1249,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260816-0406";
+const BUILD="20260816-1055";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -3504,7 +3533,12 @@ function onlineStatus(){
 
 const FB = {
   key: 'AIzaSyBEqAq9l6sAvK70jTMeNdUGzJnmY6VDL3c',
-  db:  'https://cubic-chess-af060-default-rtdb.firebaseio.com'
+  db:  'https://cubic-chess-af060-default-rtdb.firebaseio.com',
+  /* Google's OAuth web client id. EMPTY UNTIL SET UP - and while it is empty the
+     "Continue with Google" button is not rendered at all, rather than rendered and
+     broken. Enabling Google in the Firebase console creates this client; the redirect
+     URI of the published page has to be added to it by hand. See FIREBASE.md. */
+  gid: ''
 };
 /* Both strings are public by design: they name the project, they do not authorise
    anything. The database rules are what authorise. */
@@ -3603,6 +3637,22 @@ function recHas(s, code){
   for (let i=0; i+5<=s.length; i+=5) if (s.slice(i,i+4) === code) return true;
   return false;
 }
+/* Two records into one, one entry per room code, oldest first. Signing in on a second
+   device has to COMBINE what the two hold rather than pick a winner - see lockerAdopt().
+   Chunk boundaries again: a code is the first four of every five characters, never a
+   substring search, for the same reason recHas() spells that out. */
+function recMerge(a, b){
+  const seen = new Set(), out = [];
+  for (const s of [a||'', b||'']){
+    for (let i=0; i+5<=s.length; i+=5){
+      const chunk = s.slice(i, i+5), code = chunk.slice(0,4);
+      if (seen.has(code)) continue;
+      seen.add(code); out.push(chunk);
+    }
+  }
+  const j = out.join('');
+  return j.length > REC_MAX*5 ? j.slice(j.length - REC_MAX*5) : j;
+}
 function recAdd(code, r){
   if (!code || 'WLD'.indexOf(r) < 0) return;
   let s = recRead();
@@ -3611,6 +3661,7 @@ function recAdd(code, r){
   if (s.length > REC_MAX*5) s = s.slice(s.length - REC_MAX*5);
   ccSet('cc_rec', s);
   recShow();
+  lockerSave();          // no-op signed out; fire and forget signed in
 }
 function recCounts(){
   const s = recRead(), c = {W:0, L:0, D:0};
@@ -3663,7 +3714,160 @@ async function rmAuth(){
   if (!r.ok) throw new Error(RM_UNREACHABLE);
   const j = await r.json();
   RM.tok=j.idToken; RM.uid=j.localId;
-  ccSet('cc_rm', JSON.stringify({refresh:j.refreshToken, uid:j.localId}));
+  ccSet('cc_rm', JSON.stringify({refresh:j.refreshToken, uid:j.localId, prov:'anon'}));
+}
+
+/* ---------- signing in, which is optional ----------
+   Room codes need no account and never will - four letters read aloud is the whole
+   design. Signing in buys ONE thing: the name you play under and your record follow you
+   to another device. Everything else works signed out, and the anonymous path above is
+   still what a player who never touches this gets.
+
+   IDENTITY IS THE uid, AND SIGNING IN CHANGES IT. Every database rule checks
+   seats/<colour> against auth.uid, so a player whose uid changes underneath them loses
+   their seat in a live game to the rules themselves. Both directions therefore refuse
+   while a game is running, and say why.
+
+   These call identitytoolkit directly rather than going through rmAuth(). rmAuth()
+   returns early when RM.tok is already set, because its job is to obtain SOME identity;
+   here the job is to replace a particular one, which is the opposite. */
+function authSaved(){ try{ return JSON.parse(ccGet('cc_rm')||'null') || {}; }catch(e){ return {}; } }
+function authSignedIn(){ const s=authSaved(); return !!(s.prov && s.prov!=='anon'); }
+
+/* Google's error codes, said as a person would say them. The raw strings reach a child
+   otherwise, and INVALID_LOGIN_CREDENTIALS tells them nothing about what to do next. */
+const AUTH_BAD = {
+  EMAIL_EXISTS: 'That email already has an account — try Sign in instead.',
+  EMAIL_NOT_FOUND: 'No account with that email — try Create account.',
+  INVALID_PASSWORD: 'Wrong password.',
+  INVALID_LOGIN_CREDENTIALS: 'That email and password do not go together.',
+  WEAK_PASSWORD: 'Passwords need to be at least six characters.',
+  INVALID_EMAIL: 'That does not look like an email address.',
+  MISSING_PASSWORD: 'Type your password too.',
+  TOO_MANY_ATTEMPTS_TRY_LATER: 'Too many tries. Wait a minute, then try again.',
+  USER_DISABLED: 'That account has been turned off.',
+  OPERATION_NOT_ALLOWED: 'That way of signing in is not switched on for this game yet.'
+};
+function authSay(code){
+  for (const k in AUTH_BAD) if (code.indexOf(k) === 0) return AUTH_BAD[k];
+  return 'Could not sign in. ' + (code || 'Try again in a moment.');
+}
+function authBusy(){
+  if (onlineActive()) throw new Error('Leave the game you are in first — changing who you are signed in as would give away your seat.');
+}
+
+async function authPassword(email, pw, create){
+  authBusy();
+  const path = create ? 'accounts:signUp' : 'accounts:signInWithPassword';
+  let r;
+  try{
+    r = await fetch('https://identitytoolkit.googleapis.com/v1/'+path+'?key='+FB.key, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ email:email, password:pw, returnSecureToken:true })});
+  }catch(e){ throw new Error(RM_UNREACHABLE); }
+  const j = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(authSay(((j.error||{}).message)||''));
+  RM.tok = j.idToken; RM.uid = j.localId;
+  ccSet('cc_rm', JSON.stringify({refresh:j.refreshToken, uid:j.localId, email:j.email||email, prov:'password'}));
+  await lockerAdopt();
+}
+
+async function authSignOut(){
+  authBusy();
+  rmStop();
+  RM.tok = null; RM.uid = null;
+  /* The name and the record belong to the ACCOUNT now, not to the machine. Leaving them
+     behind would hand the next person at this device your history, which is the exact
+     thing the sessionStorage default upstairs exists to prevent. */
+  for (const k of ['cc_rm','cc_room','cc_rec','cc_nick']) ccDel(k);
+  const n=$('rmNick'); if (n) n.value='';
+  recShow(); authShow();
+}
+
+/* ---------- Google, by redirect and not by script ----------
+   The page navigates to Google, comes back with an id_token in the fragment, and trades
+   it for a Firebase one. Google's own sign-in library would be a <script src> on a
+   third-party host, in a page whose entire promise is that a school content filter
+   cannot break it - which is why three.js is vendored twenty lines of this file away.
+
+   Dormant until FB.gid is set. The button is not rendered while it is empty, so this
+   cannot ship as a control that fails when pressed. */
+function authNonce(){
+  const a=new Uint8Array(16); crypto.getRandomValues(a);
+  let s=''; for (let i=0;i<a.length;i++) s += (a[i]%36).toString(36);
+  return s;
+}
+function authGoogleStart(){
+  if (!FB.gid) return;
+  authBusy();
+  const nonce = authNonce();
+  ccSet('cc_nonce', nonce);
+  const back = location.origin + location.pathname;
+  location.href = 'https://accounts.google.com/o/oauth2/v2/auth'
+    + '?client_id=' + encodeURIComponent(FB.gid)
+    + '&redirect_uri=' + encodeURIComponent(back)
+    + '&response_type=id_token'
+    + '&scope=' + encodeURIComponent('openid email profile')
+    + '&nonce=' + encodeURIComponent(nonce)
+    + '&prompt=select_account';
+}
+/* Runs at boot, before anything decides who this player is. Returns true if it consumed
+   a redirect, so the caller knows an identity was just established. */
+async function authGoogleFinish(){
+  if (!location.hash || location.hash.indexOf('id_token=') < 0) return false;
+  const p = new URLSearchParams(location.hash.slice(1));
+  const idt = p.get('id_token');
+  /* Strip the token out of the address bar whatever happens next: it is a credential,
+     and it would otherwise sit in the URL, in the history, and in anything that reads
+     either. */
+  try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}
+  const want = ccGet('cc_nonce'); ccDel('cc_nonce');
+  if (!idt || !want) return false;
+  /* The nonce is checked by Firebase against the one Google signed in. Sending it is
+     what makes a token replayed from somewhere else fail here. */
+  let r;
+  try{
+    r = await fetch('https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key='+FB.key, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        postBody: 'id_token='+encodeURIComponent(idt)+'&providerId=google.com&nonce='+encodeURIComponent(want),
+        requestUri: location.origin + location.pathname,
+        returnSecureToken: true })});
+  }catch(e){ return false; }
+  const j = await r.json().catch(()=>({}));
+  if (!r.ok) return false;
+  RM.tok = j.idToken; RM.uid = j.localId;
+  ccSet('cc_rm', JSON.stringify({refresh:j.refreshToken, uid:j.localId, email:j.email||'', prov:'google'}));
+  await lockerAdopt();
+  return true;
+}
+
+/* ---------- the locker ----------
+   One node per signed-in player, holding the only two things worth carrying between
+   devices: the name they play under and their record. Nobody else can read it - the
+   rules bind it to auth.uid - and an anonymous identity is refused one on purpose,
+   since a locker nothing can ever sign back into is just litter. */
+async function lockerAdopt(){
+  let held = null;
+  try{ held = await rmGet('users/'+RM.uid); }catch(e){}
+  const remoteRec  = (held && typeof held.rec  === 'string') ? held.rec  : '';
+  const remoteNick = (held && typeof held.nick === 'string') ? held.nick : '';
+  /* The record MERGES rather than one side winning. Play a game on a phone and another
+     on a laptop and both are yours; letting the most recent sign-in overwrite would
+     quietly delete whichever half you were not holding. */
+  const rec  = recMerge(remoteRec, recRead());
+  const nick = remoteNick || ccGet('cc_nick') || '';
+  if (rec)  ccSet('cc_rec', rec);
+  if (nick){ ccSet('cc_nick', nick); const n=$('rmNick'); if (n) n.value = nick; }
+  await lockerSave();
+  recShow();
+}
+async function lockerSave(){
+  if (!authSignedIn() || !RM.uid || !RM.tok) return;
+  const body = {};
+  const nick = ccGet('cc_nick'); if (nick) body.nick = nick;
+  const rec  = recRead();        if (rec)  body.rec  = rec;
+  try{ await rmPut('users/'+RM.uid, body); }catch(e){}
 }
 
 async function rmPut(path, val){
@@ -3942,14 +4146,31 @@ function openModal(){
   $('ghModal').classList.add('on');
   rmShow('rmStart');
   recShow();
+  authShow();
 }
 function closeModal(){ $('ghModal').classList.remove('on'); }
 /* One pane visible at a time. The GitHub panes and the room panes share the sheet, so
-   this hides all four rather than toggling a pair. */
+   this hides all of them rather than toggling a pair. */
 function rmShow(which){
-  for (const id of ['ghConnect','ghLobby','rmStart','rmWait']){
+  for (const id of ['ghConnect','ghLobby','rmStart','rmAuthStep','rmWait']){
     const n=$(id); if (n) n.style.display = (id===which) ? '' : 'none';
   }
+}
+/* The strip on the room pane that says whether signing in has happened. Signed out is
+   the ordinary state and is phrased as a fact, not as a prompt with a warning on it. */
+function authShow(){
+  const who=$('rmWho'), inB=$('rmSignInBtn'), outB=$('rmSignOutBtn');
+  if (!who) return;
+  const s = authSaved();
+  if (authSignedIn()){
+    who.textContent = 'Signed in' + (s.email ? ' as ' + s.email : '')
+      + '. Your name and record follow you to any device.';
+    inB.style.display='none'; outB.style.display='';
+  } else {
+    who.textContent = 'Your name and record stay on this device.';
+    inB.style.display=''; outB.style.display='none';
+  }
+  const row=$('rmGoogleRow'); if (row) row.style.display = FB.gid ? '' : 'none';
 }
 /* wire up */
 $('modeOnline').onclick = ()=>{ if (NET==='off'){ openModal(); return; } homePick('online'); };
@@ -4030,10 +4251,53 @@ function rmWaitFor(code, colour){
   };
   $('rmForget').onclick = ()=>{
     ccForget();
-    $('rmNick').value=''; $('rmMine').checked=false; recShow();
+    $('rmNick').value=''; $('rmMine').checked=false; recShow(); authShow();
     closeModal();
     toast('Forgotten. The next person starts fresh.');
   };
+
+  /* ---------- sign-in wiring ---------- */
+  $('rmSignInBtn').onclick = ()=>{
+    $('rmAuthErr').textContent='';
+    $('rmEmail').value = authSaved().email || '';
+    $('rmPass').value = '';
+    rmShow('rmAuthStep');
+  };
+  $('rmSignOutBtn').onclick = async ()=>{
+    try{ await authSignOut(); toast('Signed out.'); }
+    catch(e){ toast(e.message); }
+  };
+  $('rmAuthBack').onclick = ()=>{ rmShow('rmStart'); recShow(); authShow(); };
+
+  /* Both buttons run the same call with one flag flipped, so the two paths cannot drift
+     apart. The button is disabled while it is in flight - a double tap on a slow phone
+     otherwise sends the second request before the first has an identity to replace. */
+  async function authGo(btn, create){
+    const b=$(btn), err=$('rmAuthErr');
+    err.textContent=''; b.disabled=true;
+    try{
+      await authPassword($('rmEmail').value.trim(), $('rmPass').value, create);
+      $('rmPass').value='';
+      rmShow('rmStart'); recShow(); authShow();
+      toast(create ? 'Account made. You are signed in.' : 'Signed in.');
+    }catch(e){ err.textContent = e.message; }
+    finally{ b.disabled=false; }
+  }
+  $('rmDoSignIn').onclick = ()=> authGo('rmDoSignIn', false);
+  $('rmDoCreate').onclick = ()=> authGo('rmDoCreate', true);
+  $('rmGoogle').onclick   = ()=>{
+    try{ authGoogleStart(); }catch(e){ $('rmAuthErr').textContent = e.message; }
+  };
+
+  /* Coming back from Google. This runs before anything else asks who the player is, so
+     the identity the rest of the boot sees is the one just signed in rather than the
+     anonymous one it would otherwise mint. */
+  authGoogleFinish().then(ok=>{
+    if (!ok) return;
+    authShow(); recShow();
+    const n=ccGet('cc_nick'); if (n) $('rmNick').value=n;
+    toast('Signed in with Google.');
+  }).catch(()=>{});
 
   /* A closed lid, a reload, a device that went to sleep: come back to the game
      rather than to the menu. The seat is ours to rewrite, so rejoining is the same

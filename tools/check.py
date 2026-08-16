@@ -140,12 +140,37 @@ else:
 print("\n3. Nothing is fetched from another host")
 # The whole point of vendoring three.js. A CDN this district blocks cost students
 # the board once already, and the failure looked like a broken game.
-urls = re.findall(r'(?:src|href)\s*=\s*["\'](https?://[^"\']+)["\']', s)
+# The lookbehind keeps this to MARKUP ATTRIBUTES. `location.href = "https://..."` is a
+# navigation - the player leaves for another page and comes back - which is a different
+# act from the page loading a resource it cannot render without, and it is governed by
+# NAV_HOSTS below instead. Without the lookbehind this scan reads every `.href =` in the
+# script as a blocked CDN.
+urls = re.findall(r'(?<![.\w])(?:src|href)\s*=\s*["\'](https?://[^"\']+)["\']', s)
 urls = [u for u in urls if not u.startswith("http://www.w3.org/")]   # SVG/XML namespaces
 if urls:
     bad("absolute URL(s) in src/href - vendor the file instead: %s" % sorted(set(urls)))
 else:
     ok("no absolute src/href")
+# Somewhere the page SENDS THE PLAYER, rather than something it loads. Same decision to
+# make and the same filter to survive, so it is written down the same way - but the
+# consequence of a block differs: a navigation that fails costs one optional feature,
+# where a blocked script costs the whole page.
+NAV_HOSTS = {
+    "accounts.google.com":
+        "the Google sign-in redirect. OPTIONAL: a filter blocking it costs Google "
+        "sign-in only - email/password still works, and room codes need no account "
+        "at all. Loading Google's sign-in library instead would put a third-party "
+        "<script src> in the page, which is the failure vendoring three.js removed",
+}
+navs = sorted(set(re.findall(
+    r'location\.(?:href|replace)\s*(?:=|\()\s*["\'](https?://([^/"\']+)[^"\']*)["\']', s)))
+nav_unknown = [u for u, host in navs if host not in NAV_HOSTS]
+if nav_unknown:
+    bad("the page navigates to a host that is not in NAV_HOSTS: %s\n"
+        "        add it there with a reason" % nav_unknown)
+else:
+    for host in sorted({h for _, h in navs}):
+        print("  note  %s - %s" % (host, NAV_HOSTS[host]))
 # fetch() to another origin is the same problem wearing a different hat. api.github.com
 # is expected until the room-code transport lands; it is named so it cannot be forgotten.
 # Every host the page may talk to, named on purpose. A new one is a decision - it is
@@ -164,7 +189,7 @@ if unknown:
     bad("fetch() to a host that is not in ALLOWED_HOSTS: %s\n"
         "        add it there with a reason, or vendor it" % unknown)
 else:
-    for _, host in fetches:
+    for host in sorted({h for _, h in fetches}):
         print("  note  %s - %s" % (host, ALLOWED_HOSTS[host]))
     # The database host is built from a variable, so it never appears as a literal here.
     if "firebasedatabase.app" in s or "firebaseio.com" in s:

@@ -12,9 +12,21 @@
  */
 import { request, canRead, SV } from './sim.mjs';
 
-const A = { uid: 'Ax7aaaaaaaaaaaaaaaaaaaaaaaaq' };
-const B = { uid: 'Bq2bbbbbbbbbbbbbbbbbbbbbbbbm' };
-const C = { uid: 'Cz9ccccccccccccccccccccccccn' };
+/* Every identity now carries the token shape the real thing carries. Room play is
+   anonymous, which is the whole point of a four-letter code, so A/B/C are anonymous -
+   and the locker rules below refuse them ON THAT GROUND, which is a thing worth being
+   able to test. An auth object without a token would make the locker rules throw rather
+   than deny, and a rule that throws is not a rule that was tested. */
+const tok = p => ({ firebase: { sign_in_provider: p } });
+const A = { uid: 'Ax7aaaaaaaaaaaaaaaaaaaaaaaaq', token: tok('anonymous') };
+const B = { uid: 'Bq2bbbbbbbbbbbbbbbbbbbbbbbbm', token: tok('anonymous') };
+const C = { uid: 'Cz9ccccccccccccccccccccccccn', token: tok('anonymous') };
+/* The same people, signed in. The uid is deliberately the SAME as the anonymous one:
+   signing in really does change the uid, but pinning it here means a locker test that
+   passes because two uids differed cannot masquerade as one that passed on provider. */
+const Apw = { uid: A.uid, token: tok('password') };
+const Bpw = { uid: B.uid, token: tok('password') };
+const Ago = { uid: A.uid, token: tok('google.com') };
 const NOAUTH = null;
 const T = 1770000000000;
 const oct = n => n.toString(8).padStart(7, '0');
@@ -356,6 +368,67 @@ deny('F19 a nickname of 13 characters', {}, [['rooms/JSFG', {
   createdAt: SV, moves: '', seats: { w: A.uid + ':1234567890123' }, seen: { w: SV } }]], A);
 deny('F20 a nickname containing a colon', {}, [['rooms/JSFH', {
   createdAt: SV, moves: '', seats: { w: A.uid + ':a:b' }, seen: { w: SV } }]], A);
+
+/* ---------------------------------------------------------------- the locker
+ * users/$uid holds the only two things worth carrying between devices: the name you
+ * play under and your record. It is the FIRST node in this database that is not a room,
+ * and the first that cares who you signed in AS rather than merely that you are someone.
+ *
+ * The provider test is a WHITELIST, not "not anonymous". A blacklist would silently hand
+ * a locker to whatever provider gets switched on next in the Firebase console - a
+ * console click, made by someone who was not thinking about this file, would widen the
+ * database. L14 is that test.
+ */
+const LOCK = { nick: 'Zed', rec: 'KMTBWQRSTL' };
+
+allow('L01 signed in with a password, writing own locker', {}, [['users/'+Apw.uid, LOCK]], Apw);
+allow('L02 signed in with Google, writing own locker',      {}, [['users/'+Ago.uid, LOCK]], Ago);
+allow('L03 updating just the nickname', { users: { [Apw.uid]: LOCK } },
+  [['users/'+Apw.uid+'/nick', 'Zedd']], Apw);
+allow('L04 appending to the record', { users: { [Apw.uid]: LOCK } },
+  [['users/'+Apw.uid+'/rec', 'KMTBWQRSTLBCDFW']], Apw);
+allow('L05 clearing the locker entirely', { users: { [Apw.uid]: LOCK } },
+  [['users/'+Apw.uid, null]], Apw);
+rd(true,  { users: { [Apw.uid]: LOCK } }, 'users/'+Apw.uid, Apw, 'L06 reading own locker');
+
+/* Who you are not */
+rd(false, { users: { [Apw.uid]: LOCK } }, 'users/'+Apw.uid, Bpw, 'L07 reading someone else’s locker');
+deny('L08 writing someone else’s locker', {}, [['users/'+Apw.uid, LOCK]], Bpw);
+rd(false, { users: { [Apw.uid]: LOCK } }, 'users/'+Apw.uid, NOAUTH, 'L09 reading a locker signed out');
+deny('L10 writing a locker signed out', {}, [['users/'+Apw.uid, LOCK]], NOAUTH);
+
+/* An anonymous player has no locker, by design: it could never be signed back into, so
+   it would be a node nobody can ever reach again, written once per tab. */
+deny('L11 an anonymous player writing a locker', {}, [['users/'+A.uid, LOCK]], A);
+rd(false, { users: { [A.uid]: LOCK } }, 'users/'+A.uid, A, 'L12 an anonymous player reading a locker');
+/* Anonymous CAN still play - the whole room path is untouched by any of this. */
+allow('L13 an anonymous player can still make a room', {}, [['rooms/JSFM', {
+  createdAt: SV, moves: '', seats: { w: A.uid + ':Zed' }, seen: { w: SV } }]], A);
+/* The whitelist, tested as a whitelist. */
+deny('L14 a provider nobody put on the list', {}, [['users/'+A.uid, LOCK]],
+  { uid: A.uid, token: tok('facebook.com') });
+
+/* Shape. .validate runs at the written node and BELOW it, never above - so a deep write
+   never meets the parent's rule, and only a per-depth $other refusal stops junk. */
+deny('L15 a nickname of 13 characters', {}, [['users/'+Apw.uid, { nick: '1234567890123' }]], Apw);
+deny('L16 a nickname containing a colon', {}, [['users/'+Apw.uid, { nick: 'a:b' }]], Apw);
+deny('L17 a nickname containing a tag bracket', {}, [['users/'+Apw.uid, { nick: '<b>' }]], Apw);
+deny('L18 a record that is not whole games', {}, [['users/'+Apw.uid, { rec: 'KMTBWQ' }]], Apw);
+deny('L19 a record using a letter outside the code alphabet', {},
+  [['users/'+Apw.uid, { rec: 'KMTAW' }]], Apw);
+deny('L20 a record longer than the cap', {},
+  [['users/'+Apw.uid, { rec: 'KMTBW'.repeat(300) }]], Apw);
+deny('L21 an unknown child', {}, [['users/'+Apw.uid, { nick: 'Zed', evil: 'x' }]], Apw);
+deny('L22 an unknown child written on its own', { users: { [Apw.uid]: LOCK } },
+  [['users/'+Apw.uid+'/evil', 'x']], Apw);
+deny('L23 junk buried three deep', { users: { [Apw.uid]: LOCK } },
+  [['users/'+Apw.uid+'/a/b/c', 'x']], Apw);
+deny('L24 the locker written as a bare string', {}, [['users/'+Apw.uid, 'gotcha']], Apw);
+deny('L25 the locker written as a number', {}, [['users/'+Apw.uid, 7]], Apw);
+deny('L26 a nickname written as an object', {}, [['users/'+Apw.uid, { nick: { a: 1 } }]], Apw);
+/* Nothing outside rooms/ and users/ is reachable at all. */
+deny('L27 a node that is neither a room nor a locker', {}, [['scores/'+Apw.uid, 1]], Apw);
+rd(false, {}, 'users', Apw, 'L28 reading the whole users collection');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -42,6 +42,27 @@
         }
       }
     },
+    "users": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid && (auth.token.firebase.sign_in_provider === 'password' || auth.token.firebase.sign_in_provider === 'google.com')",
+        ".write": "auth != null && auth.uid === $uid && (auth.token.firebase.sign_in_provider === 'password' || auth.token.firebase.sign_in_provider === 'google.com') && (!newData.exists() || newData.hasChildren())",
+        "nick": {
+          ".validate": "newData.isString() && newData.val().matches(/^[^:<>&]{1,12}$/)"
+        },
+        "rec": {
+          ".validate": "newData.isString() && newData.val().length <= 1000 && newData.val().length % 5 === 0 && newData.val().matches(/^[BCDFGHJKLMNPQRSTVWXZ]*$/)"
+        },
+        "$other": {
+          ".validate": false,
+          "$o2": {
+            ".validate": false,
+            "$o3": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    },
     "$other": {
       ".read": false,
       ".write": false,

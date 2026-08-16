@@ -1249,7 +1249,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260816-1106";
+const BUILD="20260816-1115";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -2636,12 +2636,37 @@ function tutOffer(id){
   return true;
 }
 
+/* ---- a teaching position ----
+   Teaching a rook means ONE rook on an empty board. On the opening board a rook has no
+   legal moves at all, so selecting it lights nothing and the sentence describing it has
+   nothing to point at - which is the whole reason the tutorial could only ever explain
+   the things that happen to be legal on move one, and why a player who had never played
+   chess finished it not knowing how four of the six pieces move.
+
+   This follows startPuzzle() deliberately: the same clear, the same piece shape, the
+   same redraw. Two notions of "put this position on the board" would drift. */
+function tutSetBoard(pieces, side){
+  for (let i=0;i<V.cells;i++) board[i]=null;
+  for (const p of pieces){
+    const y = p.y || 0;
+    if (!okc(p.x, y, p.z)) continue;        // a step naming a square this variant does not have
+    board[ID(p.x,y,p.z)] = {type:p.t, color:p.c, moved:!!p.m, group:null, id:Math.random()};
+  }
+  turn = (side === 'b') ? 'b' : 'w';
+  gameOver=false; selected=null; selMoves=[]; pending=null; history=[]; captured=[]; lastAI=null;
+  syncMeshes(); clearHighlights(); drawSelection(); refreshHUD();
+}
+
 function tutStart(){
-  tutState = { i: -1 };
+  tutState = { i: -1, touched: false };
   $('tut').classList.add('on');
   tutAdvance();
 }
 function tutEnd(){
+  /* Read BEFORE tutState is cleared. A tutorial that set up teaching positions has to
+     hand back a real game rather than leave whatever the last step was demonstrating
+     standing on the board - two rooks and two kings is not an opening. */
+  const touched = !!(tutState && tutState.touched);
   tutState = null;
   $('tut').classList.remove('on');
   $('tut').classList.remove('await');
@@ -2649,6 +2674,7 @@ function tutEnd(){
   selected = null; selMoves = [];
   drawSelection();
   refreshHUD();
+  if (touched) newGame();
 }
 function tutAdvance(){
   if (!tutState) return;
@@ -2656,6 +2682,9 @@ function tutAdvance(){
   tutState.i++;
   if (tutState.i >= steps.length){ tutEnd(); toast('That is the tutorial. Have a game.'); return; }
   const st = steps[tutState.i];
+  /* Before anything is said or selected: the sentence is about the position, so the
+     position has to exist first. */
+  if (st.set){ tutSetBoard(st.set, st.side); tutState.touched = true; }
   $('tutSay').textContent = st.say;
   $('tutNext').textContent = (tutState.i === steps.length-1) ? 'Finish' : 'Next';
   $('tut').classList.toggle('await', !!st.do);
@@ -4521,6 +4550,12 @@ if (new URLSearchParams(location.search).has('hooks')){
     cam:()=>({ z: camera.position.z, theta }),
     scene:()=>({ levels: levelGroups.length, frame: !!frameBox, labels: !!labelGroup }),
     variant:(id)=>{ if (VARIANTS[id]) { V = VARIANTS[id]; startGame(); } return V.id; },
+    /* The tutorial, and the ability to stand its teaching positions up. A step asking
+       for a move that is not legal in the position it set up can never be satisfied and
+       never be skipped - the player is stuck on that sentence with no way forward - so
+       tools/test-tutorial.mjs walks every step through the real move generator. */
+    tut:(id)=> (VARIANTS[id] && VARIANTS[id].tutorial) || null,
+    setBoard:(pieces, side)=>{ tutSetBoard(pieces, side); return turn; },
     /* board.slice() copies REFERENCES, and applyMove mutates p.moved on the shared
        object - so restoring the array alone puts every piece back with its first-move
        rights already spent. Perft found it instantly: depths 1 and 2 were exact and
@@ -4537,6 +4572,17 @@ if (new URLSearchParams(location.search).has('hooks')){
       applyMove(fx,fy,fz,tx,ty,tz,false,promo);
     },
     legal:(x,y,z)=>legalMoves(x,y,z),
+    inside:(x,y,z)=>!!okc(x,y,z),
+    /* Has the side to move got anything at all? A teaching position that is stalemate
+       or checkmate on arrival looks fine in the data and dead on the board. */
+    anyMove:()=>{
+      for (let i=0;i<V.cells;i++){
+        const p=board[i]; if (!p || p.color!==turn) continue;
+        const c=V.coords(i);
+        if (legalMoves(c.x,c.y,c.z).length) return true;
+      }
+      return false;
+    },
     select, doMove, sync:()=>rmSync(false),
     rec:{add:recAdd, counts:recCounts, read:recRead, has:recHas}
   };

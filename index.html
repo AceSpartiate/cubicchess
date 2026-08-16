@@ -605,6 +605,12 @@
            am about to start" were the same surface. -->
       <div id="rmAuthIn" style="display:none">
         <p class="mnote" id="rmAuthWho"></p>
+        <!-- Being signed in does NOT mean staying signed in. The default is that closing
+             the tab forgets you, which is right on a device other people use and is also
+             why signing in again every visit makes Google mail you every visit. The
+             choice belongs here, next to the account, not only on the room pane. -->
+        <p class="mnote" id="rmRememberWhy"></p>
+        <div class="mbtns"><button id="rmRemember" class="ghost small">Stay signed in on this device</button></div>
         <div class="mbtns"><button id="rmSignOutBtn" class="ghost">Sign out</button></div>
       </div>
 
@@ -1272,7 +1278,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260816-1127";
+const BUILD="20260816-1618";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1474,17 +1480,87 @@ const VARIANTS = {
     castles: true,
     engine: false,       // the Worker engine is cubic-only, so this variant has no AI yet
     moveBits: { from: 6, to: 6, promo: 3 },
-    tutorial: [
-      { say: 'Ordinary chess, on one board. White moves first, then Black, and you take it in turns from there.' },
-      { say: 'Drag to turn the board, scroll to zoom. The white pieces are nearest you.' },
-      { say: 'Click the pawn in front of your king to see where it can go.', look: [4,0,1] },
-      { say: 'A pawn moves one square forward — or two on its very first move. Push it two squares.',
-        do: { fx:4, fy:0, fz:1, tx:4, ty:0, tz:3 } },
-      { say: 'Pawns capture differently from how they move: one square diagonally forward, never straight ahead.' },
-      { say: 'Knights jump in an L and are the only piece that can leap over others. Bishops go diagonally, rooks straight, and the queen does both.' },
-      { say: 'When your king is attacked it is in check, and you must get out of it. If you cannot, that is checkmate and the game is over.' },
-      { say: 'There is no computer opponent for this game yet — play someone sitting next to you, or online. That is the tutorial; go and play.' },
-    ],
+    /* Rewritten so a player who has never played chess is taught all six pieces,
+       not only what is unusual about this variant. Steps that need an empty board
+       carry `set` - a rook on a full opening board has no legal moves at all.
+       tools/test-tutorial.mjs walks every one of these through the move generator. */
+    tutorial:
+      [
+        { say: 'Each side has one king. You win by attacking the other king so that no move can get him out of danger. That is checkmate, and it ends the game.' },
+
+        { say: 'You are White, at the bottom of the board. White moves first, then Black, one move each. Select a piece and every square it can reach lights up. This knight has two.',
+          set: [ {t:'r', c:'w', x:0, y:0, z:0}, {t:'n', c:'w', x:1, y:0, z:0}, {t:'b', c:'w', x:2, y:0, z:0}, {t:'q', c:'w', x:3, y:0, z:0}, {t:'k', c:'w', x:4, y:0, z:0}, {t:'b', c:'w', x:5, y:0, z:0}, {t:'n', c:'w', x:6, y:0, z:0}, {t:'r', c:'w', x:7, y:0, z:0},
+                 {t:'p', c:'w', x:0, y:0, z:1}, {t:'p', c:'w', x:1, y:0, z:1}, {t:'p', c:'w', x:2, y:0, z:1}, {t:'p', c:'w', x:3, y:0, z:1}, {t:'p', c:'w', x:4, y:0, z:1}, {t:'p', c:'w', x:5, y:0, z:1}, {t:'p', c:'w', x:6, y:0, z:1}, {t:'p', c:'w', x:7, y:0, z:1},
+                 {t:'p', c:'b', x:0, y:0, z:6}, {t:'p', c:'b', x:1, y:0, z:6}, {t:'p', c:'b', x:2, y:0, z:6}, {t:'p', c:'b', x:3, y:0, z:6}, {t:'p', c:'b', x:4, y:0, z:6}, {t:'p', c:'b', x:5, y:0, z:6}, {t:'p', c:'b', x:6, y:0, z:6}, {t:'p', c:'b', x:7, y:0, z:6},
+                 {t:'r', c:'b', x:0, y:0, z:7}, {t:'n', c:'b', x:1, y:0, z:7}, {t:'b', c:'b', x:2, y:0, z:7}, {t:'q', c:'b', x:3, y:0, z:7}, {t:'k', c:'b', x:4, y:0, z:7}, {t:'b', c:'b', x:5, y:0, z:7}, {t:'n', c:'b', x:6, y:0, z:7}, {t:'r', c:'b', x:7, y:0, z:7} ],
+          look: [1, 0, 0] },
+
+        { say: 'Now a rook, on a nearly empty board. It moves in straight lines: along its row, or up and down its column. It cannot pass through anything, not even your own pawn.',
+          set: [ {t:'k', c:'w', x:0, y:0, z:0}, {t:'k', c:'b', x:7, y:0, z:7}, {t:'r', c:'w', x:4, y:0, z:3}, {t:'p', c:'w', x:4, y:0, z:5} ],
+          look: [4, 0, 3] },
+
+        { say: 'The rook can cross the whole board in one move. Send it all the way to the left edge, staying on the row it is on.',
+          do: {fx:4, fy:0, fz:3, tx:0, ty:0, tz:3} },
+
+        { say: 'The bishop moves corner to corner along the slanting lines. Those slants are diagonals. Every square it reaches is the same color as the one it stands on.',
+          set: [ {t:'k', c:'w', x:0, y:0, z:0}, {t:'k', c:'b', x:7, y:0, z:7}, {t:'b', c:'w', x:4, y:0, z:3}, {t:'p', c:'w', x:0, y:0, z:1} ],
+          look: [4, 0, 3] },
+
+        { say: 'The queen is a rook and a bishop in one piece: straight lines and diagonals, any distance. She reaches more squares than any other piece. Count the lit ones.',
+          set: [ {t:'k', c:'w', x:0, y:0, z:0}, {t:'k', c:'b', x:7, y:0, z:7}, {t:'q', c:'w', x:4, y:0, z:3} ],
+          look: [4, 0, 3] },
+
+        { say: 'The knight is the only piece that jumps. Two squares one way, then one to the side. The pawns in front do not stop it. Look where it can land.',
+          set: [ {t:'k', c:'w', x:0, y:0, z:0}, {t:'k', c:'b', x:7, y:0, z:7}, {t:'n', c:'w', x:6, y:0, z:0}, {t:'p', c:'w', x:5, y:0, z:1}, {t:'p', c:'w', x:6, y:0, z:1}, {t:'p', c:'w', x:7, y:0, z:1} ],
+          look: [6, 0, 0] },
+
+        { say: 'Move the knight two squares forward and one to the left. It lands clear of the pawns.',
+          do: {fx:6, fy:0, fz:0, tx:5, ty:0, tz:2} },
+
+        { say: 'The king moves one square in any direction, and no further. He may never step next to the other king, or onto a square an enemy piece attacks. The whole game is about him.',
+          set: [ {t:'k', c:'w', x:4, y:0, z:3}, {t:'k', c:'b', x:0, y:0, z:7}, {t:'p', c:'w', x:7, y:0, z:1} ],
+          look: [4, 0, 3] },
+
+        { say: 'Pawns move forward one square and never backward. A pawn still on the row it started on may go two instead, if both squares ahead are empty. Push this one two squares.',
+          set: [ {t:'k', c:'w', x:0, y:0, z:0}, {t:'k', c:'b', x:7, y:0, z:7}, {t:'p', c:'w', x:4, y:0, z:1} ],
+          look: [4, 0, 1],
+          do: {fx:4, fy:0, fz:1, tx:4, ty:0, tz:3} },
+
+        { say: 'You capture by moving onto a square an enemy piece stands on. It leaves the board and your piece takes its place. Your rook and the black bishop share a column. Take it.',
+          set: [ {t:'k', c:'w', x:0, y:0, z:0}, {t:'k', c:'b', x:7, y:0, z:7}, {t:'r', c:'w', x:4, y:0, z:3}, {t:'b', c:'b', x:4, y:0, z:6} ],
+          look: [4, 0, 3],
+          do: {fx:4, fy:0, fz:3, tx:4, ty:0, tz:6} },
+
+        { say: 'Pawns capture differently: one square diagonally forward, either side, but only where a piece stands. The pawn straight ahead blocks this one. Take the knight.',
+          set: [ {t:'k', c:'w', x:0, y:0, z:0}, {t:'k', c:'b', x:7, y:0, z:7}, {t:'p', c:'w', x:4, y:0, z:3}, {t:'p', c:'b', x:4, y:0, z:4}, {t:'n', c:'b', x:3, y:0, z:4} ],
+          look: [4, 0, 3],
+          do: {fx:4, fy:0, fz:3, tx:3, ty:0, tz:4} },
+
+        { say: 'An attack on the king is check. The black rook is aiming straight down the column at the white king.',
+          set: [ {t:'k', c:'w', x:4, y:0, z:0}, {t:'k', c:'b', x:0, y:0, z:7}, {t:'r', c:'b', x:4, y:0, z:7} ],
+          look: [4, 0, 0] },
+
+        { say: 'Check has to be answered: move the king away, put a piece in the line, or take the attacker. Step this king one square to its right, staying on the bottom row.',
+          do: {fx:4, fy:0, fz:0, tx:5, ty:0, tz:0} },
+
+        { say: 'This is checkmate. The rook on the top row attacks the black king along it. The other rook covers the row below. Nothing can block the line or take either rook.',
+          set: [ {t:'k', c:'w', x:4, y:0, z:0}, {t:'k', c:'b', x:7, y:0, z:7}, {t:'r', c:'w', x:0, y:0, z:6}, {t:'r', c:'w', x:1, y:0, z:7} ] },
+
+        { say: 'A draw is different. If a player is not in check but has no legal move at all, nobody wins. That is stalemate, and it is easy to do by accident.' },
+
+        { say: 'A pawn that reaches the far row is promoted. It turns into a queen. A rook, bishop or knight are allowed too, but almost nobody takes them. Push this pawn to the top row.',
+          set: [ {t:'k', c:'w', x:0, y:0, z:0}, {t:'k', c:'b', x:0, y:0, z:4}, {t:'p', c:'w', x:4, y:0, z:6} ],
+          do: {fx:4, fy:0, fz:6, tx:4, ty:0, tz:7} },
+
+        { say: 'A king and a rook that have not moved may castle: the king slides two squares toward the rook, and the rook jumps over him to his other side. Only over empty squares, and never out of check.',
+          set: [ {t:'k', c:'w', x:4, y:0, z:0}, {t:'r', c:'w', x:7, y:0, z:0}, {t:'k', c:'b', x:4, y:0, z:7}, {t:'r', c:'b', x:7, y:0, z:7} ] },
+
+        { say: 'Here is the whole board again. Rooks in the corners, knights beside them, bishops next, the queen on her own color, the king beside her. White moves first. Go and play.',
+          set: [ {t:'r', c:'w', x:0, y:0, z:0}, {t:'n', c:'w', x:1, y:0, z:0}, {t:'b', c:'w', x:2, y:0, z:0}, {t:'q', c:'w', x:3, y:0, z:0}, {t:'k', c:'w', x:4, y:0, z:0}, {t:'b', c:'w', x:5, y:0, z:0}, {t:'n', c:'w', x:6, y:0, z:0}, {t:'r', c:'w', x:7, y:0, z:0},
+                 {t:'p', c:'w', x:0, y:0, z:1}, {t:'p', c:'w', x:1, y:0, z:1}, {t:'p', c:'w', x:2, y:0, z:1}, {t:'p', c:'w', x:3, y:0, z:1}, {t:'p', c:'w', x:4, y:0, z:1}, {t:'p', c:'w', x:5, y:0, z:1}, {t:'p', c:'w', x:6, y:0, z:1}, {t:'p', c:'w', x:7, y:0, z:1},
+                 {t:'p', c:'b', x:0, y:0, z:6}, {t:'p', c:'b', x:1, y:0, z:6}, {t:'p', c:'b', x:2, y:0, z:6}, {t:'p', c:'b', x:3, y:0, z:6}, {t:'p', c:'b', x:4, y:0, z:6}, {t:'p', c:'b', x:5, y:0, z:6}, {t:'p', c:'b', x:6, y:0, z:6}, {t:'p', c:'b', x:7, y:0, z:6},
+                 {t:'r', c:'b', x:0, y:0, z:7}, {t:'n', c:'b', x:1, y:0, z:7}, {t:'b', c:'b', x:2, y:0, z:7}, {t:'q', c:'b', x:3, y:0, z:7}, {t:'k', c:'b', x:4, y:0, z:7}, {t:'b', c:'b', x:5, y:0, z:7}, {t:'n', c:'b', x:6, y:0, z:7}, {t:'r', c:'b', x:7, y:0, z:7} ] }
+      ],
     ready: true,         // perft 20 / 400 / 8902 / 197281, matching published numbers
   }
 };
@@ -2745,8 +2821,16 @@ let intent = null;
    a small screen means it, and having it spring back every game is the annoyance they
    were trying to fix. Rewiring after each rebuild of the brand line, since that line is
    replaced whenever the variant changes and takes the button with it. */
+/* Folded by default on a narrow screen, and only a DELIBERATE choice is remembered.
+   The panel is 343px of a 375px-wide phone and it sits on top of the board. Making it
+   collapsible was not enough while it still opened covering the game: a first-time
+   player, told to move a piece, sees a board half hidden behind a menu and reads it as
+   a game that will not respond. A wide screen has room for both, so it stays open there. */
 let hudFolded = false;
-try{ hudFolded = localStorage.getItem('cc_hud') === 'folded'; }catch(e){}
+try{
+  const saved = localStorage.getItem('cc_hud');
+  hudFolded = saved ? (saved === 'folded') : (window.innerWidth <= 700);
+}catch(e){ hudFolded = window.innerWidth <= 700; }
 
 function applyHudFold(){
   const hud=$('hud'), b=$('hudToggle');
@@ -3648,7 +3732,11 @@ function ccDel(k){
 /* Marking a device yours moves what is already stored, rather than stranding it in the
    store it happens to be in. */
 function ccSetMine(on){
-  const keys = ['cc_rm','cc_room','cc_nick'];
+  /* cc_rec belongs in this list. It was left out when the list was three keys long and
+     the switch lived only on the room pane; now that it can be flipped from the account
+     screen while signed in, leaving the record behind in the store it happened to be in
+     would lose the games played before the switch. */
+  const keys = ['cc_rm','cc_room','cc_nick','cc_rec'];
   const held = keys.map(k => [k, ccGet(k)]);
   try{
     if (on) localStorage.setItem('cc_mine','1');
@@ -3857,13 +3945,20 @@ function authGoogleStart(){
   const nonce = authNonce();
   ccSet('cc_nonce', nonce);
   const back = location.origin + location.pathname;
+  /* prompt=select_account forces the chooser, and forcing it EVERY time is what makes
+     Google send "you shared info with this app" on every visit - each forced pass is a
+     fresh authorisation as far as Google is concerned. So it is asked for only when we
+     do not already know who this is; when we do, login_hint names them and Google can
+     reuse the grant silently. Choosing a different account is still possible - sign out
+     first, which clears the hint. */
+  const known = authSaved().email || '';
   location.href = 'https://accounts.google.com/o/oauth2/v2/auth'
     + '?client_id=' + encodeURIComponent(FB.gid)
     + '&redirect_uri=' + encodeURIComponent(back)
     + '&response_type=id_token'
     + '&scope=' + encodeURIComponent('openid email profile')
     + '&nonce=' + encodeURIComponent(nonce)
-    + '&prompt=select_account';
+    + (known ? '&login_hint=' + encodeURIComponent(known) : '&prompt=select_account');
 }
 /* Runs at boot, before anything decides who this player is. Returns true if it consumed
    a redirect, so the caller knows an identity was just established. */
@@ -4254,6 +4349,16 @@ function authShow(){
   if (whoTxt) whoTxt.textContent   = 'Signed in' + (s.email ? ' as ' + s.email : '')
     + '. Your name and record are kept with the account, not on this device.';
 
+  const why=$('rmRememberWhy'), rem=$('rmRemember');
+  if (why && rem){
+    const mine = ccMine();
+    why.textContent = mine
+      ? 'This device remembers you, so you will not have to sign in again.'
+      : 'Closing the tab signs you out again, which is right on a device other people '
+        + 'use — but it means signing in every visit, and Google emails you each time.';
+    rem.textContent = mine ? 'Forget me on this device' : 'Stay signed in on this device';
+  }
+
   /* Google appears only once there is a client id to send it to. A button that fails
      when pressed is worse than a button that is not there - see FIREBASE.md 4b. */
   const row=$('rmGoogleRow'), or=$('rmAuthOr');
@@ -4360,6 +4465,17 @@ function rmWaitFor(code, colour){
   /* ---------- sign-in wiring ---------- */
   $('homeAccount').onclick = authOpen;
   $('rmSignInBtn').onclick = authOpen;
+  /* Same switch as the room pane's checkbox, reached from the account. ccSetMine moves
+     what is already stored rather than stranding it in the store it happens to be in,
+     so flipping this while signed in keeps the identity that is already held. */
+  $('rmRemember').onclick = ()=>{
+    const now = !ccMine();
+    ccSetMine(now);
+    const box=$('rmMine'); if (box) box.checked = now;
+    authShow();
+    toast(now ? 'This device will remember you.'
+              : 'Closing the tab will now forget you on this device.');
+  };
   $('rmSignOutBtn').onclick = async ()=>{
     try{ await authSignOut(); toast('Signed out.'); }
     catch(e){ $('rmAuthErr').textContent = e.message; }

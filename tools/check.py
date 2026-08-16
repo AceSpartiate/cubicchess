@@ -196,6 +196,19 @@ else:
         print("  note  the Realtime Database host is the ONE domain in this design that "
               "has not been tried from a student device")
 
+# Google sign-in renders only when FB.gid holds a client id. That is right for a player
+# - a button that fails when pressed is worse than one that is not there - and it is
+# INVISIBLE to whoever owns the project, which is exactly how it went unnoticed. So the
+# state is stated on every run rather than inferred from a button nobody can see.
+m = re.search(r"\bgid:\s*'([^']*)'", s)
+if m is None:
+    bad("FB.gid is gone - the Google button can never render, and nothing would say so")
+elif not m.group(1):
+    print("  note  Google sign-in is DORMANT: FB.gid is empty, so the button does not "
+          "render at all. FIREBASE.md 4b has the console step.")
+else:
+    ok("Google sign-in has a client id, so the button renders")
+
 print("\n3b. The game does not name hardware it cannot see")
 # A student may be on a laptop, a tablet or a phone. Telling them about a Chromebook
 # when they are not holding one is wrong on the screen and slightly wrong about the

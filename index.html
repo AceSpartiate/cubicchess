@@ -1272,7 +1272,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260816-1120";
+const BUILD="20260816-1127";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -3586,11 +3586,13 @@ function onlineStatus(){
 const FB = {
   key: 'AIzaSyBEqAq9l6sAvK70jTMeNdUGzJnmY6VDL3c',
   db:  'https://cubic-chess-af060-default-rtdb.firebaseio.com',
-  /* Google's OAuth web client id. EMPTY UNTIL SET UP - and while it is empty the
-     "Continue with Google" button is not rendered at all, rather than rendered and
-     broken. Enabling Google in the Firebase console creates this client; the redirect
-     URI of the published page has to be added to it by hand. See FIREBASE.md. */
-  gid: ''
+  /* Google's OAuth web client id, created by the Firebase console when Google sign-in
+     was switched on. Public by design, like the two strings above: it names the client,
+     it authorises nothing. While it is EMPTY the "Continue with Google" button is not
+     rendered at all, rather than rendered and broken.
+     The client must also LIST the address this page returns to, or Google refuses with
+     redirect_uri_mismatch before the player ever gets back. See FIREBASE.md 4b. */
+  gid: '600772496550-4k30raa6da4pm1j3a16rlae3rmeupjv1.apps.googleusercontent.com'
 };
 /* Both strings are public by design: they name the project, they do not authorise
    anything. The database rules are what authorise. */
@@ -3866,6 +3868,18 @@ function authGoogleStart(){
 /* Runs at boot, before anything decides who this player is. Returns true if it consumed
    a redirect, so the caller knows an identity was just established. */
 async function authGoogleFinish(){
+  /* Google may send us back an ERROR instead of a token - the player pressed Cancel, or
+     the account is not allowed to use this app. Saying nothing looks exactly like the
+     button having done nothing at all, which is the one reading guaranteed to be wrong. */
+  if (location.hash && location.hash.indexOf('error=') >= 0){
+    const e = new URLSearchParams(location.hash.slice(1)).get('error') || '';
+    try{ history.replaceState(null, '', location.pathname + location.search); }catch(err){}
+    ccDel('cc_nonce');
+    toast(e === 'access_denied'
+      ? 'Google sign-in was cancelled. Nothing changed.'
+      : 'Google would not sign you in (' + e + '). Email and password still work.');
+    return false;
+  }
   if (!location.hash || location.hash.indexOf('id_token=') < 0) return false;
   const p = new URLSearchParams(location.hash.slice(1));
   const idt = p.get('id_token');

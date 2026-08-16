@@ -139,6 +139,19 @@
     .legend{display:none}
     .rules{width:170px}
   }
+  /* On a phone the panel covers the board it is describing, so it folds away to its
+     own title bar. Everything below the brand line collapses; the brand line stays,
+     because it is what you tap to get the panel back. */
+  #hudToggle{display:none}
+  @media (max-width:700px){
+    .hud{width:auto;max-width:60vw;padding:8px 10px}
+    #hudToggle{display:inline-block;float:right;margin-left:10px;
+      background:transparent;border:1px solid var(--line);border-radius:5px;
+      color:var(--dim);font-size:10px;line-height:1;padding:3px 7px;cursor:pointer}
+    #hudToggle:hover{border-color:var(--mint);color:var(--mint)}
+    .hud.folded > *:not(.brand){display:none}
+    .hud.folded{padding-bottom:8px}
+  }
   @media (prefers-reduced-motion: reduce){ *{transition:none !important} }
 
   /* #onlinePanel and #onlineState.on used to be styled here. There is no element
@@ -370,6 +383,10 @@
     <!-- Three things you can do. Which GAME you do it with is the next screen, so
          adding a variant never adds a button here. -->
     <div class="modes" id="homeModes">
+      <button class="mode" id="homeResume" style="display:none">
+        <span class="mt">Resume your game</span>
+        <span class="md"></span>
+      </button>
       <button class="mode" id="modePlay">
         <span class="mt">Play</span>
         <span class="md">Against the computer, or share this screen with someone</span>
@@ -396,7 +413,7 @@
 </div>
 
 <div class="hud" id="hud">
-  <p class="brand"><b>Cubic</b> Chess · 8×8×8 <span id="modeBadge"></span></p>
+  <p class="brand"><button id="hudToggle" type="button" aria-expanded="true">hide</button><b>Cubic</b> Chess · 8×8×8 <span id="modeBadge"></span></p>
   <div class="turn"><span class="dot w" id="dot"></span><span id="turnTxt">White</span></div>
   <div class="status" id="status">Select a piece to see its moves.</div>
 
@@ -1203,7 +1220,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260815-2254";
+const BUILD="20260816-0351";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1224,6 +1241,24 @@ const BUILD="20260815-2254";
             u2.searchParams.set("v",latest);
             u2.searchParams.set("t",Date.now());   /* a key no cache can hold */
             location.replace(u2.toString());
+          };
+        }
+        return;
+      }
+      /* NOT DURING A GAME. Reloading to pick up a new build is right at the menu and
+         indefensible mid-move: it throws the position away and drops the player back on
+         the home screen with no idea why. A game in progress gets the banner instead,
+         and picks the update up whenever it next loads. */
+      if (typeof gameMode !== "undefined" && gameMode !== null){
+        const n=document.getElementById("stale");
+        if(n){
+          n.style.display="flex";
+          n.querySelector("b").textContent="An update is ready. It will load when you finish this game.";
+          n.querySelector("button").textContent="Load it now";
+          n.querySelector("button").onclick=function(){
+            const u3=new URL(location.href);
+            u3.searchParams.set("v",latest);
+            location.replace(u3.toString());
           };
         }
         return;
@@ -1771,7 +1806,10 @@ function buildLabels(){
   if (V.ny > 1) for (let y=0;y<V.ny;y++){
     const s = textSprite('L'+(y+1), '#57729a', 0.62);
     const p = W(0,y,0);
-    s.position.set(-4.75, p.y+FLOOR_OFF+0.4, -4.75);
+    /* Far corner, not near. These used to sit at z=-4.75, which was behind the camera
+       when the board faced Black and is straight through the middle of the board now
+       that it faces White. The far-left corner is out of the way from either side. */
+    s.position.set(4.75, p.y+FLOOR_OFF+0.4, 4.75);
     g.add(s);
   }
   scene.add(g); labelGroup = g;
@@ -2448,6 +2486,53 @@ function setMode(m){ gameMode = m; applyHelpers(); applyEngineAvailability(); }
 function openHome(){ gameMode=null; $('home').classList.add('on'); homeShowModes(); }
 function closeHome(){ $('home').classList.remove('on'); }
 
+/* ---------- a game you are in the middle of survives a reload ----------
+   Online games already came back: the room code is stored and the moves are on the
+   server. A LOCAL game had nothing, so any reload dropped the player on the home screen
+   with the position gone - and a phone reloads a backgrounded WebGL tab whenever it
+   feels like it, which is not a rare event but the normal one.
+
+   The move list is the whole save. Replaying it through applyMove reaches the same
+   position by the same code path that produced it, so there is no second notion of
+   what a position is to drift out of step. */
+function saveLocal(){
+  if (onlineActive() || coachState || tutState || gameMode !== 'play'){ return; }
+  if (!history.length){ ccDel('cc_game'); return; }
+  try{ ccSet('cc_game', JSON.stringify({ v: V.id, m: history })); }catch(e){}
+}
+function savedLocal(){
+  let g=null; try{ g=JSON.parse(ccGet('cc_game')||'null'); }catch(e){}
+  if (!g || !g.v || !VARIANTS[g.v] || !VARIANTS[g.v].ready || !Array.isArray(g.m) || !g.m.length) return null;
+  return g;
+}
+function resumeLocal(){
+  const g = savedLocal();
+  if (!g) return false;
+  V = VARIANTS[g.v];
+  buildLattice(); buildLabels(); applyTheme(currentTheme); applyVariantChrome();
+  closeHome(); setMode('play'); reqId++; thinking=false;
+  startGame();
+  for (const m of g.m){
+    const p = board[ID(m.fx,m.fy,m.fz)];
+    if (!p || p.color!==turn) break;                       // a save that no longer fits
+    if (!legalMoves(m.fx,m.fy,m.fz).some(v=>v.x===m.tx&&v.y===m.ty&&v.z===m.tz)) break;
+    history.push(m);
+    applyMove(m.fx,m.fy,m.fz,m.tx,m.ty,m.tz,false,m.promo);
+  }
+  drawSelection(); refreshHUD();
+  saveLocal();          // startGame() cleared it on the way through; put it back
+  toast('Picked up where you left off.');
+  return true;
+}
+function offerResume(){
+  const g = savedLocal(), btn = $('homeResume');
+  if (!btn) return;
+  if (!g){ btn.style.display='none'; return; }
+  btn.style.display='';
+  btn.querySelector('.md').textContent =
+    VARIANTS[g.v].label + ' · ' + g.m.length + (g.m.length===1?' move':' moves') + ' in';
+}
+
 /* ---------- the first-time tutorial ----------
    Asked once per GAME, not once per player: someone who knows the cube inside out has
    still never seen traditional chess here, and someone who plays flat chess every day
@@ -2530,15 +2615,43 @@ let intent = null;
 
 /* The page still called itself Cubic Chess whatever you were playing, and the side
    panel still explained movement in three axes over a flat board. */
+/* The panel folds to its title bar. Remembered, because someone who folded it away on
+   a small screen means it, and having it spring back every game is the annoyance they
+   were trying to fix. Rewiring after each rebuild of the brand line, since that line is
+   replaced whenever the variant changes and takes the button with it. */
+let hudFolded = false;
+try{ hudFolded = localStorage.getItem('cc_hud') === 'folded'; }catch(e){}
+
+function applyHudFold(){
+  const hud=$('hud'), b=$('hudToggle');
+  if (hud) hud.classList.toggle('folded', hudFolded);
+  if (b){ b.textContent = hudFolded ? 'show' : 'hide';
+          b.setAttribute('aria-expanded', hudFolded ? 'false' : 'true'); }
+}
+function wireHudToggle(){
+  const b=$('hudToggle');
+  if (!b) return;
+  b.onclick = ()=>{
+    hudFolded = !hudFolded;
+    try{ localStorage.setItem('cc_hud', hudFolded ? 'folded' : 'open'); }catch(e){}
+    applyHudFold();
+  };
+  applyHudFold();
+}
+
 function applyVariantChrome(){
   const brand = document.querySelector('.brand');
-  if (brand) brand.innerHTML = '<b>' + esc(V.label.split(' ')[0]) + '</b> ' +
+  if (brand) brand.innerHTML =
+      '<button id="hudToggle" type="button" aria-expanded="' + (hudFolded ? 'false' : 'true') + '">' +
+      (hudFolded ? 'show' : 'hide') + '</button>' +
+      '<b>' + esc(V.label.split(' ')[0]) + '</b> ' +
       esc(V.label.split(' ').slice(1).join(' ')) +
       (V.ny > 1 ? ' · ' + V.nx + '×' + V.ny + '×' + V.nz : '') +
       ' <span id="modeBadge"></span>';
   const rules = document.querySelector('details.rules summary');
   if (rules) rules.textContent = V.ny > 1 ? 'Movement in three axes' : 'How the pieces move';
   document.title = V.label + (V.ny > 1 ? ' — ' + V.nx + '×' + V.ny + '×' + V.nz : '');
+  wireHudToggle();
   applyHelpers();
 }
 
@@ -2546,6 +2659,8 @@ function homeShowModes(){
   $('homeModes').style.display = '';
   $('homeGames').style.display = 'none';
   intent = null;
+  offerResume();
+wireHudToggle();
 }
 
 function homePick(what){
@@ -2577,7 +2692,9 @@ function homeChose(key){
   homeShowModes();
   if (what === 'coach'){ reqId++; thinking=false; openCoach(); return; }
   if (what === 'online'){ openModal(); return; }
-  closeHome(); setMode('play'); reqId++; thinking=false; startGame();
+  closeHome(); setMode('play'); reqId++; thinking=false;
+  ccDel('cc_game');            // a new game means the old one is not on offer any more
+  startGame();
   tutOffer(key);          // only here: Coach already teaches, and online has someone waiting
 }
 
@@ -2866,6 +2983,7 @@ function doMove(tx,ty,tz,promo){
   history.push(mv);
   lastAI = null;
   applyMove(mv.fx,mv.fy,mv.fz,tx,ty,tz,true,promo);
+  saveLocal();
   maybeAIMove();
 }
 async function postMyMove(mv){
@@ -2906,6 +3024,22 @@ function pick(ev){
 /* ---- orbit ---- */
 let theta = 0.72, phi = 1.02, radius = 17.5;
 const target = new THREE.Vector3(0, FLOOR_OFF+0.4, 0);
+/* Which side of the board you are sitting on. theta 0.72 looks from White's end; the
+   opposite view is half a turn round. A player given Black online was being shown the
+   board from behind their opponent, with their own back rank furthest away and their
+   pawns moving TOWARDS them - which is the one orientation nobody can read. */
+function facePlayer(){
+  const mine = onlineActive() ? GH.myColor : 'w';
+  /* camera.z = radius*sin(phi)*cos(theta), and White's back rank is at world z = -3.5,
+     so sitting behind White means a NEGATIVE camera z, which means cos(theta) < 0.
+     The long-standing default of 0.72 puts the camera at z = +11.2 - Black's side - so
+     every player has always started looking at the board over their opponent's
+     shoulder, with their own back rank furthest away. */
+  theta = (mine === 'b') ? 0.72 : 0.72 + Math.PI;
+  phi = 1.02;
+  updateCamera();
+}
+
 function updateCamera(){
   camera.position.set(
     target.x + radius*Math.sin(phi)*Math.sin(theta),
@@ -3033,7 +3167,7 @@ addEventListener('keydown', e=>{
 
 $('reset').onclick = ()=>{
   if (typeof onlineActive==='function' && onlineActive()){ toast('Leave the online game first (Online panel).'); return; }
-  reqId++; thinking=false; history=[]; startGame(); maybeAIMove();
+  reqId++; thinking=false; history=[]; ccDel('cc_game'); startGame(); maybeAIMove();
 };
 $('ai').onchange = ()=>{ reqId++; thinking=false; $('engineLine').className='engine'; $('engineLine').textContent=''; maybeAIMove(); };
 function rebuild(){
@@ -3539,6 +3673,7 @@ async function rmStart(code, colour){
   reqId++; thinking=false; history=[];
   startGame();
   onlineStatus();
+  facePlayer();        // now that the seat is known, turn the board round if it is Black's
   await rmSync(true);
   rmListen();
   RM.beat = setInterval(rmBeat, 15000);
@@ -3884,6 +4019,7 @@ function startGame(){
   statusMsg='Select a piece to see its moves.'; statusClass='';
   $('engineLine').textContent='';
   drawSelection();     // show threats (practice) on the opening position without a click
+  facePlayer();        // whichever colour you are, you start behind your own pieces
   refreshHUD();
 }
 
@@ -3994,6 +4130,7 @@ function homeIsOpen(){ const el=document.getElementById('home'); return el && el
 $('modePlay').onclick  = ()=> homePick('play');
 $('modeCoach').onclick = ()=> homePick('coach');
 $('homeGamesBack').onclick = homeShowModes;
+$('homeResume').onclick = resumeLocal;
 $('tutNext').onclick = tutAdvance;
 $('tutSkip').onclick = ()=>{ tutEnd(); toast('Skipped. Settings has it again if you want it.'); };
 $('firstYes').onclick = ()=>{ $('firstModal').classList.remove('on'); tutMarkSeen(V.id); tutStart(); };
@@ -4021,6 +4158,10 @@ openHome();
 setMode('practice');   // sensible default state behind the overlay
 $('modeBadge').textContent=''; $('modeBadge').className='';   // hidden until a choice is made
 gameMode=null;
+/* The home screen is shown by the markup, not by openHome(), so nothing called
+   offerResume() on a cold load - which is exactly the load that matters, since it is
+   the one after the phone discarded the tab. */
+offerResume();
 
 
 
@@ -4064,6 +4205,7 @@ if (new URLSearchParams(location.search).has('hooks')){
                           moves:RM.movesStr, err:GH.lastErr, mode:RM.mode, uid:RM.uid}; },
     at:(x,y,z)=>{ const p=board[ID(x,y,z)]; return p?{t:p.type,c:p.color,moved:p.moved}:null; },
     newGame:()=>{ gameMode='play'; startGame(); },
+    cam:()=>({ z: camera.position.z, theta }),
     scene:()=>({ levels: levelGroups.length, frame: !!frameBox, labels: !!labelGroup }),
     variant:(id)=>{ if (VARIANTS[id]) { V = VARIANTS[id]; startGame(); } return V.id; },
     /* board.slice() copies REFERENCES, and applyMove mutates p.moved on the shared

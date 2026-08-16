@@ -147,6 +147,26 @@ probe('root is PRE-write, so it cannot see this write',
 probe('data is PRE-write and sees the old value',
   "data.child('a/b').val() === 1", { probe: { a: { b: 1 } } }, [['probe/a/b', 2]], true);
 
+/* The locker asks HOW you signed in, which is the first rule in this project to read
+   anything out of the token rather than just auth.uid. Verified against live Firebase
+   on 16 Aug 2026 (test-rules-live.py, "anonymous writes a locker" -> denied,
+   "signed in, writes own locker" -> allowed); these pin the same behaviour offline so
+   check.py guards it on every commit without the network. */
+function probeAs(desc, ruleExpr, auth, want) {
+  useRules({ rules: { probe: { '.write': ruleExpr } } });
+  const got = request({}, [['probe', { a: 1 }]], auth, NOW, desc).ok;
+  prim.push([desc, got === want]);
+  if (got !== want) wrong.push([`primitive: ${desc}`, want, got, []]);
+}
+const asProv = p => ({ uid: 'Uu1uuuuuuuuuuuuuuuuuuuuuuuuu', token: { firebase: { sign_in_provider: p } } });
+const WL = "(auth.token.firebase.sign_in_provider === 'password' || auth.token.firebase.sign_in_provider === 'google.com')";
+probeAs('sign_in_provider resolves out of the token', WL, asProv('password'), true);
+probeAs('google.com is on the list',                  WL, asProv('google.com'), true);
+probeAs('anonymous is not on the list',               WL, asProv('anonymous'), false);
+/* The point of a whitelist rather than "not anonymous": a provider switched on later in
+   the console gets nothing until this file says so. */
+probeAs('a provider nobody listed gets nothing',      WL, asProv('facebook.com'), false);
+
 useRules(JSON.parse(fs.readFileSync(new URL('./rules-2026-08-10.json', import.meta.url), 'utf8')));
 agree += prim.filter(([, good]) => good).length;
 

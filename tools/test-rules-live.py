@@ -46,6 +46,32 @@ def anon(label):
     print("  %-9s %s" % (label, d["localId"][:12] + "..."))
     return d["idToken"], d["localId"]
 
+def pw(label):
+    """A REAL signed-in account, because the locker rules turn on which provider you
+    used and an anonymous token cannot exercise them at all.
+
+    The address is synthetic and the domain is .invalid, which RFC 2606 reserves and
+    which can therefore never belong to a person - so these accounts can never receive
+    mail, be recovered, or collide with a student's. Each run leaves two behind, the
+    same way it leaves a room behind; they are inert and cost nothing."""
+    email = "cc-live-%s@cubicchess.invalid" % secrets.token_hex(6)
+    req = urllib.request.Request(
+        "https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=" + KEY,
+        data=json.dumps({"email": email, "password": secrets.token_hex(12),
+                         "returnSecureToken": True}).encode(),
+        headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        d = json.load(urllib.request.urlopen(req))
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="replace")[:200]
+        print("\n  could not create a signed-in account: %s\n"
+              "  If this says OPERATION_NOT_ALLOWED, Email/Password is not enabled:\n"
+              "  Firebase console -> Authentication -> Sign-in method -> Email/Password.\n"
+              % detail)
+        raise SystemExit(2)
+    print("  %-9s %s  %s" % (label, d["localId"][:12] + "...", email))
+    return d["idToken"], d["localId"]
+
 def w(path, tok, body, method="PUT"):
     req = urllib.request.Request(
         "%s/%s.json?auth=%s" % (DB, path, tok),
@@ -130,6 +156,38 @@ check("black resigns (names white the winner)", w("rooms/%s/over/b" % R, tB, "w"
 check("nobody plays on after a resignation",
       w("rooms/%s/moves" % R, tA, M2 + oct7(2)), False)
 check("an outcome rewritten once set", w("rooms/%s/over/b" % R, tB, "d"), False)
+
+print("\nTHE LOCKER - users/$uid, the only node that cares HOW you signed in:")
+tP, uP = pw("signed-in")
+tQ, uQ = pw("someone else")
+LOCK = {"nick": "Zed", "rec": "KMTBWQRSTL"}
+
+check("signed in, writes own locker", w("users/" + uP, tP, LOCK), True)
+check("signed in, reads own locker", rd("users/" + uP, tP), True)
+check("updates just the nickname", w("users/%s/nick" % uP, tP, "Zedd"), True)
+check("appends to the record", w("users/%s/rec" % uP, tP, "KMTBWQRSTLBCDFW"), True)
+
+check("someone else reads my locker", rd("users/" + uP, tQ), False)
+check("someone else writes my locker", w("users/" + uP, tQ, LOCK), False)
+# The whitelist, live. An anonymous player is exactly who the room flow makes, so this
+# is the case that proves signing in is what buys a locker rather than merely existing.
+check("anonymous writes a locker", w("users/" + uA, tA, LOCK), False)
+check("anonymous reads a locker", rd("users/" + uA, tA), False)
+check("anyone enumerates users", rd("users", tP), False)
+
+check("a 13-character nickname", w("users/" + uP, tP, {"nick": "1234567890123"}), False)
+check("a nickname containing a colon", w("users/" + uP, tP, {"nick": "a:b"}), False)
+check("a nickname containing markup", w("users/" + uP, tP, {"nick": "<b>hi</b>"}), False)
+check("a record that is not whole games", w("users/" + uP, tP, {"rec": "KMTBWQ"}), False)
+check("a record outside the code alphabet", w("users/" + uP, tP, {"rec": "KMTAW"}), False)
+check("a record longer than the cap", w("users/" + uP, tP, {"rec": "KMTBW" * 300}), False)
+check("an unknown child", w("users/%s/evil" % uP, tP, "x"), False)
+check("junk buried three deep", w("users/%s/a/b/c" % uP, tP, "x" * 200), False)
+check("the locker written as a bare string", w("users/" + uP, tP, "gotcha"), False)
+check("the locker written as a number", w("users/" + uP, tP, 7), False)
+check("a node that is neither a room nor a locker", w("scores/" + uP, tP, 1), False)
+# Deleting your own locker must work: it is what signing out on a shared device leans on.
+check("clears own locker", w("users/" + uP, tP, None, "DELETE"), True)
 
 bad = [d for good, d in results if not good]
 print("\n%d/%d matched the offline suite" % (len(results) - len(bad), len(results)))

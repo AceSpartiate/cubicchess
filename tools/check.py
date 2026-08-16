@@ -137,6 +137,26 @@ else:
     else:
         bad("traditional chess disagrees with published perft:\n" + r.stdout[-900:])
 
+print("\n2d. The first-time tutorial runs to the end")
+# A step that asks for a move which is not legal in the position it set up can never be
+# satisfied and never be skipped past. It presents as a child doing exactly what the
+# sentence says while nothing happens - and everything else here passes, because the
+# steps are data, they parse, and the game runs perfectly right up until that step.
+if not HAVE_NODE:
+    skip("node not on PATH - the tutorial walk needs it")
+else:
+    r = subprocess.run(["node", os.path.join(ROOT, "tools", "test-tutorial.mjs")],
+                       capture_output=True, text=True, cwd=ROOT)
+    if r.returncode == 0:
+        for line in r.stdout.strip().splitlines():
+            if line.strip().startswith("ok") or line.strip().startswith("skip"):
+                print("  " + line.strip().replace("ok  ", "ok    ", 1))
+        ok(r.stdout.strip().splitlines()[-1].strip())
+    elif r.returncode == 2:
+        skip("the headless harness could not load the page")
+    else:
+        bad("a tutorial step would strand the player:\n" + r.stdout[-1200:])
+
 print("\n3. Nothing is fetched from another host")
 # The whole point of vendoring three.js. A CDN this district blocks cost students
 # the board once already, and the failure looked like a broken game.

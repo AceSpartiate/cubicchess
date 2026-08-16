@@ -1278,7 +1278,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260816-1618";
+const BUILD="20260816-1736";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1416,18 +1416,121 @@ const VARIANTS = {
     ready: true,
     /* Steps a first-time player is walked through. `do` is a move they must make before
        the next step appears - reading is easy to skip past, moving the piece is not. */
-    tutorial: [
-      { say: 'This is one board, eight levels deep. The floor is Level 1 and the pieces start there — but every level above it is real, and you can move up into it.' },
-      { say: 'Drag to turn the board. Scroll to zoom. Try it now, then press Next.' },
-      { say: 'Pawns are the difference. A pawn moves one square forward like always — or one square STRAIGHT UP a level. Click the pawn in front of your king.',
-        look: [4,0,1] },
-      { say: 'See the four squares it can reach: one forward, two forward, one up, two up. Move it UP one level.',
-        do: { fx:4, fy:0, fz:1, tx:4, ty:1, tz:1 } },
-      { say: 'It is now on Level 2, defending squares nothing on the floor can reach. Pawns never move back down.' },
-      { say: 'Bishops are the other surprise. On a flat board a bishop is stuck on one colour forever. Here it also rides the true diagonal where all three directions change at once — which lets it reach every square on the board.' },
-      { say: 'Everything else you already know. Rooks slide along one axis, including straight up. Knights leap. The king moves one square in any of 26 directions.' },
-      { say: 'Win the way you always do: checkmate the king. That is the whole tutorial — play a game.' },
-    ],
+    /* Rewritten so a player who has never played chess is taught all six pieces,
+       not only what the cube adds. Steps needing a clear board carry `set`.
+       tools/test-tutorial.mjs walks every look and move through the generator. */
+    tutorial:
+      [
+      { say: 'This is one board, eight levels deep. All thirty-two pieces start on the floor, Level 1, and every one of them can climb into the seven empty levels above.' },
+
+      { say: 'Two armies. You play White, another player takes Black, and you move one piece each, turn about, White first. You win by trapping the black king.' },
+
+      { say: 'Drag to turn the cube. Scroll or pinch to zoom out until all eight levels show. To move a piece: click it, click one of the squares that light up, then press Confirm.' },
+
+      { say: 'A rook slides any distance in one straight line: across, forwards and backwards, and straight up or down through the levels. Send it up three levels, to Level 6.',
+      set: [ {t:'r', c:'w', x:3, y:2, z:3},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,2,3],
+      do: { fx:3, fy:2, fz:3, tx:3, ty:5, tz:3 } },
+
+      { say: 'A rook stops at the first piece in its way. Your own pawn blocks it forwards, and you can never land on a piece of your own. The kings in the far corners are just parked.',
+      set: [ {t:'r', c:'w', x:3, y:0, z:3}, {t:'p', c:'w', x:3, y:0, z:5}, {t:'r', c:'b', x:6, y:0, z:3},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,0,3] },
+
+      { say: 'The black rook does not block it: it can be taken. You capture by moving onto a square an enemy piece stands on, and it leaves the board for good. Take that rook.',
+      set: [ {t:'r', c:'w', x:3, y:0, z:3}, {t:'p', c:'w', x:3, y:0, z:5}, {t:'r', c:'b', x:6, y:0, z:3},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,0,3],
+      do: { fx:3, fy:0, fz:3, tx:6, ty:0, tz:3 } },
+
+      { say: 'A bishop moves slantwise: one square across and one square along at the same time, over and over. On its own level that is the X lit around it now.',
+      set: [ {t:'b', c:'w', x:3, y:0, z:3},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,0,3] },
+
+      { say: 'It also rides the slant where across, along and up all change at once. Everything else lit is climbing. Follow that slant three steps, to Level 4.',
+      set: [ {t:'b', c:'w', x:3, y:0, z:3},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,0,3],
+      do: { fx:3, fy:0, fz:3, tx:6, ty:3, tz:6 } },
+
+      { say: 'The queen is a rook and a bishop in one piece: every straight line and every slant, at any distance. She reaches more squares than anything else here.',
+      set: [ {t:'q', c:'w', x:3, y:3, z:3},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,3,3] },
+
+      { say: 'A pawn moves one square forward, towards the side where Black starts, whichever way you have turned the cube. Or one square straight up a level. Never backwards, never down.',
+      set: [ {t:'p', c:'w', x:4, y:0, z:1},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [4,0,1] },
+
+      { say: 'A pawn that has not moved yet may go two instead, either way. Four squares are lit: one forward, two forward, one up, two up. Send this one two levels up.',
+      set: [ {t:'p', c:'w', x:4, y:0, z:1},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [4,0,1],
+      do: { fx:4, fy:0, fz:1, tx:4, ty:2, tz:1 } },
+
+      { say: 'A pawn takes differently: one square diagonally forward, and that diagonal may rise or drop a level. Eight in all, three of them filled here. Take the black pawn a level above yours.',
+      set: [ {t:'p', c:'w', x:4, y:2, z:3, m:true},
+      {t:'p', c:'b', x:3, y:2, z:4}, {t:'p', c:'b', x:5, y:1, z:4}, {t:'p', c:'b', x:5, y:3, z:4},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [4,2,3],
+      do: { fx:4, fy:2, fz:3, tx:5, ty:3, tz:4 } },
+
+      { say: 'A pawn becomes a queen by reaching the far rank, on any level. Climbing to the top level does nothing by itself. Push this one onto the far rank, then confirm the queen.',
+      set: [ {t:'p', c:'w', x:4, y:4, z:6, m:true},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [4,4,6],
+      do: { fx:4, fy:4, fz:6, tx:4, ty:4, tz:7 } },
+
+      { say: 'The knight is the only piece that jumps over others: two squares in a straight line, then one to the side, and nothing at all in the third direction. Some of its leaps aim up.',
+      set: [ {t:'n', c:'w', x:3, y:0, z:3},
+      {t:'p', c:'w', x:2, y:0, z:2}, {t:'p', c:'w', x:3, y:0, z:2}, {t:'p', c:'w', x:4, y:0, z:2},
+      {t:'p', c:'w', x:2, y:0, z:3}, {t:'p', c:'w', x:4, y:0, z:3},
+      {t:'p', c:'w', x:2, y:0, z:4}, {t:'p', c:'w', x:3, y:0, z:4}, {t:'p', c:'w', x:4, y:0, z:4},
+      {t:'p', c:'w', x:3, y:1, z:3},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,0,3] },
+
+      { say: 'Nine pawns box this knight in, around it and above it, and not one of them stops it. Jump it clear: two squares forward and one across, landing outside the ring.',
+      set: [ {t:'n', c:'w', x:3, y:0, z:3},
+      {t:'p', c:'w', x:2, y:0, z:2}, {t:'p', c:'w', x:3, y:0, z:2}, {t:'p', c:'w', x:4, y:0, z:2},
+      {t:'p', c:'w', x:2, y:0, z:3}, {t:'p', c:'w', x:4, y:0, z:3},
+      {t:'p', c:'w', x:2, y:0, z:4}, {t:'p', c:'w', x:3, y:0, z:4}, {t:'p', c:'w', x:4, y:0, z:4},
+      {t:'p', c:'w', x:3, y:1, z:3},
+      {t:'k', c:'w', x:0, y:7, z:0}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,0,3],
+      do: { fx:3, fy:0, fz:3, tx:4, ty:0, tz:5 } },
+
+      { say: 'The king moves one square in any direction, which in a cube is the twenty-six squares wrapped around him. He may never step onto a square an enemy attacks.',
+      set: [ {t:'k', c:'w', x:3, y:3, z:3}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,3,3] },
+
+      { say: 'A black rook attacks your king from three levels below, straight up the column. That is check. You cannot leave your king attacked, so you answer it this move.',
+      set: [ {t:'k', c:'w', x:3, y:3, z:3}, {t:'r', c:'b', x:3, y:0, z:3},
+      {t:'r', c:'w', x:7, y:0, z:3}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [3,3,3] },
+
+      { say: 'A check has three answers: move the king, put a piece in the way, or take the attacker. Take the attacker. Your own rook is lit, down on Level 1.',
+      set: [ {t:'k', c:'w', x:3, y:3, z:3}, {t:'r', c:'b', x:3, y:0, z:3},
+      {t:'r', c:'w', x:7, y:0, z:3}, {t:'k', c:'b', x:7, y:7, z:6} ],
+      look: [7,0,3],
+      do: { fx:7, fy:0, fz:3, tx:3, ty:0, tz:3 } },
+
+      { say: 'Checkmate is a check with no answer: nowhere to go, nothing to put in the way, no way to take the attacker. Black is mated here and White wins. No legal move and no check is a draw instead.',
+      set: [ {t:'q', c:'w', x:6, y:6, z:6}, {t:'k', c:'w', x:5, y:5, z:5}, {t:'k', c:'b', x:7, y:7, z:7} ] },
+
+      { say: 'That is all six pieces. Every game opens like this, both armies flat on Level 1 with seven empty levels above. Once the back rank clears, king and rook may castle past each other.',
+      set: [ {t:'r', c:'w', x:0, y:0, z:0}, {t:'n', c:'w', x:1, y:0, z:0}, {t:'b', c:'w', x:2, y:0, z:0}, {t:'q', c:'w', x:3, y:0, z:0},
+      {t:'k', c:'w', x:4, y:0, z:0}, {t:'b', c:'w', x:5, y:0, z:0}, {t:'n', c:'w', x:6, y:0, z:0}, {t:'r', c:'w', x:7, y:0, z:0},
+      {t:'p', c:'w', x:0, y:0, z:1}, {t:'p', c:'w', x:1, y:0, z:1}, {t:'p', c:'w', x:2, y:0, z:1}, {t:'p', c:'w', x:3, y:0, z:1},
+      {t:'p', c:'w', x:4, y:0, z:1}, {t:'p', c:'w', x:5, y:0, z:1}, {t:'p', c:'w', x:6, y:0, z:1}, {t:'p', c:'w', x:7, y:0, z:1},
+      {t:'p', c:'b', x:0, y:0, z:6}, {t:'p', c:'b', x:1, y:0, z:6}, {t:'p', c:'b', x:2, y:0, z:6}, {t:'p', c:'b', x:3, y:0, z:6},
+      {t:'p', c:'b', x:4, y:0, z:6}, {t:'p', c:'b', x:5, y:0, z:6}, {t:'p', c:'b', x:6, y:0, z:6}, {t:'p', c:'b', x:7, y:0, z:6},
+      {t:'r', c:'b', x:0, y:0, z:7}, {t:'n', c:'b', x:1, y:0, z:7}, {t:'b', c:'b', x:2, y:0, z:7}, {t:'q', c:'b', x:3, y:0, z:7},
+      {t:'k', c:'b', x:4, y:0, z:7}, {t:'b', c:'b', x:5, y:0, z:7}, {t:'n', c:'b', x:6, y:0, z:7}, {t:'r', c:'b', x:7, y:0, z:7} ] },
+      ],
   },
 
   /* The two that do not exist yet. They are listed here rather than in a separate

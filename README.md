@@ -13,9 +13,10 @@ engine, an AI opponent, 11 themes, and 140 engine-verified puzzles.
 |------|------------|
 | `index.html` | The entire game — markup, styles, engine, and all puzzle data. |
 | `three.min.js` | three.js r128, vendored. See below. |
-| `tools/check.py` | Ten pre-flight checks. Run before committing; the hook runs it for you. |
+| `tools/check.py` | The pre-flight checks. Run before committing; the hook runs it for you. |
 | `tools/validate.js` | Gates perft and replays all 140 puzzles. Called by `check.py`. |
-| `tools/test-rules.mjs` | 120 cases against the database rules. Offline. Called by `check.py`. |
+| `tools/test-rules.mjs` | 148 cases against the database rules. Offline. Called by `check.py`. |
+| `tools/test-tutorial.mjs` | Walks every tutorial step through the real move generator. Called by `check.py`. |
 | `tools/calibrate-sim.mjs` | Pins the evaluator to verdicts recorded from the live project. |
 | `tools/test-rules-live.py` | The same ground against the real database. Run after publishing rules. |
 | `tools/sim.mjs` | A Realtime Database rules evaluator that does multi-path writes properly. |
@@ -50,10 +51,13 @@ the game says **Offline Play Only** and the other three modes carry on.
 python tools/check.py
 ```
 
-Ten numbered checks. The two that matter most need `node`: every `<script>` block
+Numbered checks. The three that matter most need `node`: every `<script>` block
 must parse **on its own** (Chrome loads three of them separately), and `validate.js`
 must gate perft at **136 / 18479** and replay every line of all 140 puzzles through
-the engine's own move generator. The rest catch absolute URLs, ids the script reaches
+the engine's own move generator. The third walks every first-time-tutorial step through
+that same generator: a step asking for a move that is not legal in the position it set up
+can never be satisfied and never be skipped, and it reaches a child as a sentence telling
+them to do something that does nothing. The rest catch absolute URLs, ids the script reaches
 for that the markup does not have, unbalanced storage keys, a missing `three.min.js`,
 and a build stamp that disagrees with `version.txt`. Each check skips loudly rather
 than vanishing when its tool is absent.
@@ -100,6 +104,10 @@ re-run the checks in `MAINTENANCE.md`.
 - **A tutorial the first time you play each game.** Asked once per game, not once per
   player — knowing the cube inside out tells you nothing about traditional chess here,
   and vice versa. Some steps hold the board until you make the move they describe.
+  It teaches **all six pieces**, for a player who has never played any chess. Steps that
+  need one build their own position: a rook on a full opening board has no legal moves at
+  all, which is why the earlier version could only ever explain what happens to be legal
+  on move one.
 - **Three buttons.** Play, Coach, Play online. Which game you play is the next screen,
   so a new variant never adds a button. Two taps to a board.
 - **Play vs AI or hot-seat.** Selectable strength; "off" gives two-player local play.

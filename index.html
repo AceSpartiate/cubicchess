@@ -182,6 +182,8 @@
     padding-top:10px;border-top:1px solid var(--line)}
   .authstrip .mnote{margin:0;flex:1 1 150px}
   .authstrip button{flex:0 0 auto}
+  .acctline{display:flex;justify-content:center;margin-top:14px}
+  .acctline button{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   #rmBig{font-family:var(--mono);font-size:44px;letter-spacing:.22em;text-align:center;
     color:var(--mint);padding:14px 0 6px;text-indent:.22em}
 
@@ -403,6 +405,13 @@
         <span class="mt"><span id="modeOnlineLabel">Play online</span> <span id="homeOnlineState"></span></span>
         <span class="md" id="modeOnlineSub">Play someone with a four-letter code</span>
       </button>
+      <!-- Signing in is optional, so it is a LINE and not a fourth mode button: the
+           three buttons are the three things you can do, and a variant or an account
+           must never become a fourth. It still has to be findable from the front door,
+           which buried inside Play online it was not. -->
+      <div class="acctline">
+        <button class="ghost small" id="homeAccount">Sign in</button>
+      </div>
     </div>
 
     <!-- The game picker. One panel, reached from all three buttons, built from
@@ -560,7 +569,7 @@
 
 <div class="modal" id="ghModal">
   <div class="sheet">
-    <div class="mhead"><b>Play online</b><span class="x" id="ghClose">esc</span></div>
+    <div class="mhead"><b id="ghTitle">Play online</b><span class="x" id="ghClose">esc</span></div>
 
     <div class="mstep" id="rmStart" style="display:none">
       <p class="mnote">Pick a name, then either start a game and read the code out, or type the code someone read to you.</p>
@@ -580,7 +589,6 @@
       <div class="authstrip">
         <span class="mnote" id="rmWho">Your name and record stay on this device.</span>
         <button id="rmSignInBtn" class="ghost small">Sign in</button>
-        <button id="rmSignOutBtn" class="ghost small" style="display:none">Sign out</button>
       </div>
       <label class="ccmine"><input type="checkbox" id="rmMine"> This device is just mine</label>
       <p class="mnote" id="rmMineWhy">Leave this unticked on a shared device: closing the tab
@@ -589,22 +597,37 @@
     </div>
 
     <div class="mstep" id="rmAuthStep" style="display:none">
-      <p class="mnote">Signing in is optional, and it buys exactly one thing: your name and
+      <p class="mnote" id="rmAuthIntro">Signing in is optional, and it buys exactly one thing: your name and
         your record follow you to any device you sign in on. Room codes work without it.</p>
-      <label>Email</label>
-      <input id="rmEmail" type="email" autocomplete="email" spellcheck="false" placeholder="you@example.com">
-      <label style="margin-top:12px">Password <span class="dim">at least six characters</span></label>
-      <input id="rmPass" type="password" autocomplete="current-password">
-      <div class="mbtns">
-        <button id="rmDoSignIn">Sign in</button>
-        <button id="rmDoCreate" class="ghost">Create account</button>
+
+      <!-- Signed in: this pane IS the account screen, and the only Sign out in the game
+           lives here. It used to sit on the room pane, where "account" and "the game I
+           am about to start" were the same surface. -->
+      <div id="rmAuthIn" style="display:none">
+        <p class="mnote" id="rmAuthWho"></p>
+        <div class="mbtns"><button id="rmSignOutBtn" class="ghost">Sign out</button></div>
       </div>
-      <div class="mbtns" id="rmGoogleRow" style="display:none;margin-top:10px">
-        <button id="rmGoogle" class="ghost">Continue with Google</button>
+
+      <!-- Signed out: Google first when it is available, because it is one tap against a
+           form with two fields and a password to remember. -->
+      <div id="rmAuthOut">
+        <div class="mbtns" id="rmGoogleRow" style="display:none">
+          <button id="rmGoogle">Continue with Google</button>
+        </div>
+        <p class="mnote" id="rmAuthOr" style="display:none;text-align:center;margin:12px 0">or</p>
+        <label>Email</label>
+        <input id="rmEmail" type="email" autocomplete="email" spellcheck="false" placeholder="you@example.com">
+        <label style="margin-top:12px">Password <span class="dim">at least six characters</span></label>
+        <input id="rmPass" type="password" autocomplete="current-password">
+        <div class="mbtns">
+          <button id="rmDoSignIn">Sign in</button>
+          <button id="rmDoCreate" class="ghost">Create account</button>
+        </div>
+        <p class="mnote">Your password is sent to Google's sign-in service and never stored by
+          this game. Nothing you do here is visible to anyone else, and no score reaches a teacher.</p>
       </div>
+
       <div class="merr" id="rmAuthErr"></div>
-      <p class="mnote">Your password is sent to Google's sign-in service and never stored by
-        this game. Nothing you do here is visible to anyone else, and no score reaches a teacher.</p>
       <div class="mbtns"><button id="rmAuthBack" class="ghost small">Back</button></div>
     </div>
 
@@ -1249,7 +1272,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260816-1115";
+const BUILD="20260816-1120";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -4184,22 +4207,57 @@ function rmShow(which){
   for (const id of ['ghConnect','ghLobby','rmStart','rmAuthStep','rmWait']){
     const n=$(id); if (n) n.style.display = (id===which) ? '' : 'none';
   }
+  /* The sheet is shared, so its heading has to follow the pane. It said "Play online"
+     over the account screen, which is the wrong answer to "where am I" - especially
+     when the account screen is now reached from the home menu without going near a game. */
+  const t=$('ghTitle');
+  if (t) t.textContent = (which === 'rmAuthStep')
+    ? (authSignedIn() ? 'Your account' : 'Sign in')
+    : 'Play online';
 }
-/* The strip on the room pane that says whether signing in has happened. Signed out is
-   the ordinary state and is phrased as a fact, not as a prompt with a warning on it. */
+/* Every surface that mentions the account, brought into agreement in one place: the
+   line on the home screen, the strip on the room pane, and the account pane itself.
+   Signed out is the ORDINARY state and is phrased as a fact, not as a prompt with a
+   warning attached - most players will never sign in and nothing is wrong with that. */
 function authShow(){
-  const who=$('rmWho'), inB=$('rmSignInBtn'), outB=$('rmSignOutBtn');
-  if (!who) return;
-  const s = authSaved();
-  if (authSignedIn()){
-    who.textContent = 'Signed in' + (s.email ? ' as ' + s.email : '')
-      + '. Your name and record follow you to any device.';
-    inB.style.display='none'; outB.style.display='';
-  } else {
-    who.textContent = 'Your name and record stay on this device.';
-    inB.style.display=''; outB.style.display='none';
+  const s = authSaved(), on = authSignedIn();
+  const named = on ? (ccGet('cc_nick') || s.email || 'signed in') : '';
+
+  const home=$('homeAccount');
+  if (home) home.textContent = on ? ('Account · ' + named) : 'Sign in';
+
+  const who=$('rmWho');
+  if (who) who.textContent = on
+    ? ('Signed in' + (s.email ? ' as ' + s.email : '') + '. Your name and record follow you to any device.')
+    : 'Your name and record stay on this device.';
+  const btn=$('rmSignInBtn');
+  if (btn) btn.textContent = on ? 'Account' : 'Sign in';
+
+  const inBox=$('rmAuthIn'), outBox=$('rmAuthOut'), intro=$('rmAuthIntro'), whoTxt=$('rmAuthWho');
+  if (inBox)  inBox.style.display  = on ? '' : 'none';
+  if (outBox) outBox.style.display = on ? 'none' : '';
+  if (intro)  intro.style.display  = on ? 'none' : '';
+  if (whoTxt) whoTxt.textContent   = 'Signed in' + (s.email ? ' as ' + s.email : '')
+    + '. Your name and record are kept with the account, not on this device.';
+
+  /* Google appears only once there is a client id to send it to. A button that fails
+     when pressed is worse than a button that is not there - see FIREBASE.md 4b. */
+  const row=$('rmGoogleRow'), or=$('rmAuthOr');
+  if (row) row.style.display = FB.gid ? '' : 'none';
+  if (or)  or.style.display  = FB.gid ? '' : 'none';
+}
+/* The account pane, from wherever it was asked for. */
+function authOpen(){
+  if (NET==='off'){
+    toast('No connection — signing in needs one. Play and Coach do not.');
+    return;
   }
-  const row=$('rmGoogleRow'); if (row) row.style.display = FB.gid ? '' : 'none';
+  $('ghModal').classList.add('on');
+  $('rmAuthErr').textContent='';
+  $('rmEmail').value = authSaved().email || '';
+  $('rmPass').value = '';
+  recShow(); authShow();
+  rmShow('rmAuthStep');
 }
 /* wire up */
 $('modeOnline').onclick = ()=>{ if (NET==='off'){ openModal(); return; } homePick('online'); };
@@ -4286,17 +4344,19 @@ function rmWaitFor(code, colour){
   };
 
   /* ---------- sign-in wiring ---------- */
-  $('rmSignInBtn').onclick = ()=>{
-    $('rmAuthErr').textContent='';
-    $('rmEmail').value = authSaved().email || '';
-    $('rmPass').value = '';
-    rmShow('rmAuthStep');
-  };
+  $('homeAccount').onclick = authOpen;
+  $('rmSignInBtn').onclick = authOpen;
   $('rmSignOutBtn').onclick = async ()=>{
     try{ await authSignOut(); toast('Signed out.'); }
-    catch(e){ toast(e.message); }
+    catch(e){ $('rmAuthErr').textContent = e.message; }
   };
-  $('rmAuthBack').onclick = ()=>{ rmShow('rmStart'); recShow(); authShow(); };
+  /* Back from the account pane goes to the room pane when the modal was opened to play,
+     and closes it when it was opened from the home screen - where the room pane is not
+     somewhere the player asked to be. */
+  $('rmAuthBack').onclick = ()=>{
+    if ($('home').classList.contains('on')){ closeModal(); authShow(); return; }
+    rmShow('rmStart'); recShow(); authShow();
+  };
 
   /* Both buttons run the same call with one flag flipped, so the two paths cannot drift
      apart. The button is disabled while it is in flight - a double tap on a slow phone
@@ -4307,7 +4367,10 @@ function rmWaitFor(code, colour){
     try{
       await authPassword($('rmEmail').value.trim(), $('rmPass').value, create);
       $('rmPass').value='';
-      rmShow('rmStart'); recShow(); authShow();
+      recShow(); authShow();
+      /* Opened from the home screen: give the home screen back. Opened on the way into
+         a game: carry on into the game. */
+      if ($('home').classList.contains('on')) closeModal(); else rmShow('rmStart');
       toast(create ? 'Account made. You are signed in.' : 'Signed in.');
     }catch(e){ err.textContent = e.message; }
     finally{ b.disabled=false; }
@@ -4321,6 +4384,11 @@ function rmWaitFor(code, colour){
   /* Coming back from Google. This runs before anything else asks who the player is, so
      the identity the rest of the boot sees is the one just signed in rather than the
      anonymous one it would otherwise mint. */
+  /* The home screen's account line has to be right on the FIRST paint, not once the
+     modal has been opened - it is the thing telling the player whether they are signed
+     in, and it renders before anyone presses anything. */
+  authShow();
+
   authGoogleFinish().then(ok=>{
     if (!ok) return;
     authShow(); recShow();

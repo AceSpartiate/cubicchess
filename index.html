@@ -1278,7 +1278,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260817-1120";
+const BUILD="20260817-1148";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1705,6 +1705,72 @@ const VARIANTS = {
        rules accept as seven octal digits. It fits with nothing to spare. */
     moveBits: { from: 9, to: 9, promo: 3 },
     engine: false,        // the Worker search engine is cubic-only
+    /* Both kings are parked in opposite far corners of the two attack boards in every
+       teaching position: (0,1,0) and (5,3,9) are as far apart as this board allows, on
+       different levels, and neither can be reached by anything the steps put down. */
+    tutorial: [
+      { say: 'Three boards, one above the other, each four squares by four. They overlap like steps on a staircase, so the middle board covers the far half of the low one.' },
+
+      { say: 'Four smaller boards hang off the corners, two squares by two. Yours are the two nearest you. Drag to turn it all round, and scroll or pinch until you can see every level.' },
+
+      { say: 'The whole game rests on one idea: look DOWN on the boards from above. A piece moves the way it would on one flat board — and then you choose which level it lands on.',
+        set: [ {t:'r',c:'w',x:2,y:2,z:4}, {t:'k',c:'w',x:0,y:1,z:0}, {t:'k',c:'b',x:5,y:3,z:9} ],
+        look: [2,2,4] },
+
+      { say: 'That is a rook. Seen from above it moves in straight lines, any distance, exactly as on a flat board. Every lit square is one it can reach.',
+        look: [2,2,4] },
+
+      { say: 'Look at the square one step forward: it is lit TWICE, once on this level and once higher up. Same square from above, two levels to land on. Take the higher one.',
+        do: { fx:2, fy:2, fz:4, tx:2, ty:4, tz:5 } },
+
+      { say: 'It changed level without ever moving straight up. You cannot do that here — a piece must travel at least one square sideways to reach another level.' },
+
+      { say: 'A piece blocks at EVERY level. This pawn sits a level below the rook, and it still stops the rook going that way — but the rook may land beside it, above or below.',
+        set: [ {t:'r',c:'w',x:2,y:2,z:4}, {t:'p',c:'w',x:2,y:0,z:2},
+               {t:'k',c:'w',x:0,y:1,z:0}, {t:'k',c:'b',x:5,y:3,z:9} ],
+        look: [2,2,4] },
+
+      { say: 'A bishop moves slantwise, corner to corner, again as seen from above. From the middle board it can reach right down onto a small corner board.',
+        set: [ {t:'b',c:'w',x:3,y:2,z:4}, {t:'k',c:'w',x:0,y:1,z:0}, {t:'k',c:'b',x:5,y:3,z:9} ],
+        look: [3,2,4] },
+
+      { say: 'The queen does both: straight lines and slants, any distance, landing on any level she reaches. She is the strongest piece here as she is anywhere.',
+        set: [ {t:'q',c:'w',x:2,y:2,z:4}, {t:'k',c:'w',x:0,y:1,z:0}, {t:'k',c:'b',x:5,y:3,z:9} ],
+        look: [2,2,4] },
+
+      { say: 'The knight is the only piece that jumps over others. Two squares one way, one square the other, seen from above — and it too picks its level. Send it up to the far board.',
+        set: [ {t:'n',c:'w',x:2,y:2,z:4}, {t:'k',c:'w',x:0,y:1,z:0}, {t:'k',c:'b',x:5,y:3,z:9} ],
+        look: [2,2,4],
+        do: { fx:2, fy:2, fz:4, tx:3, ty:4, tz:6 } },
+
+      { say: 'The king moves one square in any direction, seen from above, and may change level doing it. He may never step onto a square an enemy piece attacks.',
+        set: [ {t:'k',c:'w',x:2,y:2,z:4}, {t:'k',c:'b',x:5,y:3,z:9} ],
+        look: [2,2,4] },
+
+      { say: 'Pawns go forward one square, towards the far end, and never back. On its first move a pawn may go two — and either one may land on a different level.',
+        set: [ {t:'p',c:'w',x:2,y:0,z:2}, {t:'k',c:'w',x:0,y:1,z:0}, {t:'k',c:'b',x:5,y:3,z:9} ],
+        look: [2,0,2] },
+
+      { say: 'Push it two squares and land on the middle board — one move that goes forward and up at the same time.',
+        do: { fx:2, fy:0, fz:2, tx:2, ty:2, tz:4 } },
+
+      { say: 'A pawn captures differently from how it moves: one square diagonally forward, onto any level. The knight ahead of it is on the middle board. Take it.',
+        set: [ {t:'p',c:'w',x:2,y:0,z:2}, {t:'n',c:'b',x:3,y:2,z:3},
+               {t:'k',c:'w',x:0,y:1,z:0}, {t:'k',c:'b',x:5,y:3,z:9} ],
+        look: [2,0,2],
+        do: { fx:2, fy:0, fz:2, tx:3, ty:2, tz:3 } },
+
+      { say: 'A pawn that can go no further becomes a queen. There is no single far rank on this board — the outside files run two squares further than the middle two do.' },
+
+      { say: 'Attack the king and that is check; it must be answered at once. No answer at all is checkmate, and the game is over. That part is ordinary chess.',
+        set: [ {t:'k',c:'w',x:2,y:2,z:4}, {t:'r',c:'b',x:2,y:4,z:8},
+               {t:'k',c:'b',x:5,y:3,z:9} ],
+        look: [2,2,4] },
+
+      { say: 'One warning. The four small boards are meant to be MOVED about the game, and they do not move yet — so the opening is cramped and the pieces on them are stuck. That is being built.' },
+
+      { say: 'That is the whole of it: your ordinary moves, seen from above, with a choice of level at the end. Go and play.' },
+    ],
     ready: true,
   },
   flat: {

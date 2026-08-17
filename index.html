@@ -1278,7 +1278,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260816-1736";
+const BUILD="20260817-1100";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1537,10 +1537,64 @@ const VARIANTS = {
      "coming soon" array so the picker has ONE source of truth: a variant appears in
      the menu the moment it appears here, and lights up the moment it gets a geometry.
      ready:false is the whole difference. */
+  /* Tri-dimensional chess, by MEDER's rules. See TRID.md for why Meder and not the two
+     better-known alternatives, and for the whole coordinate mapping.
+
+     The short version: this is the first variant whose squares do not fill their box.
+     64 squares live inside a 6x5x10 lattice of 300, so most of it is air - which is what
+     inside() is for, and why the renderer was taught about holes before this existed.
+
+     Meder's files are z,a,b,c,d,e and his ranks run 0-9. Five y levels, because the
+     attack boards sit BETWEEN the main boards and a lattice needs somewhere to put them. */
   trid: {
     id: 'trid',
     label: 'Tri-Dimensional Chess',
     sub: 'Three small boards on different levels, plus four that move with the game.',
+    nx: 6, ny: 5, nz: 10,
+    cells: 300,
+    idx:    (x,y,z) => x + 6*y + 30*z,
+    coords: i => ({ x: i%6, y: ((i/6)|0)%5, z: (i/30)|0 }),
+    /* y=0 White's Board, 1 White's attack boards, 2 Neutral, 3 Black's attack boards,
+       4 Black's Board. The main boards are 4x4 on files a-d, offset by two ranks each,
+       so the plan view is 8 ranks by 4 files. The attack boards are 2x2 and hang off
+       the outside files, one pair at each end. */
+    inside: (x,y,z) => {
+      if (x<0||x>5||y<0||y>4||z<0||z>9) return false;
+      if (y===0) return x>=1&&x<=4 && z>=1&&z<=4;     // W
+      if (y===2) return x>=1&&x<=4 && z>=3&&z<=6;     // N
+      if (y===4) return x>=1&&x<=4 && z>=5&&z<=8;     // B
+      const outer = (x<=1) || (x>=4);                 // files z,a on one side; d,e on the other
+      if (y===1) return outer && z<=1;                // QL1 and KL1
+      if (y===3) return outer && z>=8;                // QL6 and KL6
+      return false;
+    },
+    fileName:  x => 'zabcde'[x],
+    rankName:  z => String(z),
+    levelName: y => ['W','QL1/KL1','N','QL6/KL6','B'][y],
+    /* Meder and Bartmess agree on this and W3DCF does not: the ROOKS sit on the outer
+       rear corner of each attack board, with the QUEEN beside one and the KING beside
+       the other, which leaves knights and bishops on the main rear rank. W3DCF puts
+       knights on the attack boards and the king and queen on the main board instead. */
+    start: (()=> {
+      const out = [];
+      const put = (t,c,x,y,z) => out.push({t,c,x,y,z});
+      // White: QL1 (rook, queen, two pawns) and KL1 (king, rook, two pawns)
+      put('r','w',0,1,0); put('q','w',1,1,0); put('p','w',0,1,1); put('p','w',1,1,1);
+      put('k','w',4,1,0); put('r','w',5,1,0); put('p','w',4,1,1); put('p','w',5,1,1);
+      // White's main board: knight, bishop, bishop, knight, then four pawns
+      const back = ['n','b','b','n'];
+      for (let i=0;i<4;i++){ put(back[i],'w',1+i,0,1); put('p','w',1+i,0,2); }
+      // Black, mirrored through the middle: ranks 9 and 8 on the attack boards, 8 and 7 on B
+      put('r','b',0,3,9); put('q','b',1,3,9); put('p','b',0,3,8); put('p','b',1,3,8);
+      put('k','b',4,3,9); put('r','b',5,3,9); put('p','b',4,3,8); put('p','b',5,3,8);
+      for (let i=0;i<4;i++){ put(back[i],'b',1+i,4,8); put('p','b',1+i,4,7); }
+      return out;
+    })(),
+    /* Not playable yet: the move generator Meder describes is not the one this engine
+       has. His move is the ordinary 2D move applied to the VERTICAL PROJECTION with the
+       landing level a free choice, which no list of 3D direction vectors can express.
+       Geometry first, moves next. */
+    engine: false,
     ready: false,
   },
   flat: {
@@ -4856,6 +4910,14 @@ if (new URLSearchParams(location.search).has('hooks')){
        never be skipped - the player is stuck on that sentence with no way forward - so
        tools/test-tutorial.mjs walks every step through the real move generator. */
     tut:(id)=> (VARIANTS[id] && VARIANTS[id].tutorial) || null,
+    /* The tri-dimensional geometry, readable WITHOUT making it the active variant -
+       it has no move generator yet, so startGame() on it would be meaningless.
+       tools/test-trid.mjs checks it against the numbers written down in TRID.md. */
+    tridSpec:()=>{
+      const t = VARIANTS.trid;
+      return { nx:t.nx, ny:t.ny, nz:t.nz, cells:t.cells,
+               idx:t.idx, coords:t.coords, inside:t.inside, start:t.start };
+    },
     setBoard:(pieces, side)=>{ tutSetBoard(pieces, side); return turn; },
     /* board.slice() copies REFERENCES, and applyMove mutates p.moved on the shared
        object - so restoring the array alone puts every piece back with its first-move

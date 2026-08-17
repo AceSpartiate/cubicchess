@@ -137,6 +137,23 @@ else:
     else:
         bad("traditional chess disagrees with published perft:\n" + r.stdout[-900:])
 
+print("\n2c2. The tri-dimensional board is the board TRID.md describes")
+# Cubic is guarded by two implementations agreeing, traditional chess by published perft.
+# Tri-D has NEITHER - no perft exists for any tri-D ruleset and the Worker engine is
+# cubic-only - so a wrong lattice would be silently wrong forever. The numbers are typed
+# into the test by hand from the research, not derived from the code they check.
+if not HAVE_NODE:
+    skip("node not on PATH - the tri-D geometry check needs it")
+else:
+    r = subprocess.run(["node", os.path.join(ROOT, "tools", "test-trid.mjs")],
+                       capture_output=True, text=True, cwd=ROOT)
+    if r.returncode == 0:
+        ok(r.stdout.strip().splitlines()[-1].strip())
+    elif r.returncode == 2:
+        skip("the headless harness could not load the page")
+    else:
+        bad("the tri-D board disagrees with TRID.md:\n" + r.stdout[-1200:])
+
 print("\n2d. The first-time tutorial runs to the end")
 # A step that asks for a move which is not legal in the position it set up can never be
 # satisfied and never be skipped past. It presents as a child doing exactly what the

@@ -1278,7 +1278,7 @@ if (typeof THREE === "undefined"){
    reload carries ?v= so it cannot be answered from the cache that caused it. If
    we already chased this build and are STILL not running it, the cache has won —
    say so and give the player a button rather than refreshing forever. */
-const BUILD="20260817-1100";
+const BUILD="20260817-1120";
 (function(){
   try{
     if(!window.fetch || location.protocol==="file:") return;
@@ -1570,7 +1570,9 @@ const VARIANTS = {
     },
     fileName:  x => 'zabcde'[x],
     rankName:  z => String(z),
-    levelName: y => ['W','QL1/KL1','N','QL6/KL6','B'][y],
+    /* Short enough for the 128px label sprite - "QL1/KL1" rendered as "1/K". L1 and L6
+       echo Meder's pin numbers, which name the two attack boards sitting at that height. */
+    levelName: y => ['W','L1','N','L6','B'][y],
     /* Meder and Bartmess agree on this and W3DCF does not: the ROOKS sit on the outer
        rear corner of each attack board, with the QUEEN beside one and the KING beside
        the other, which leaves knights and bishops on the main rear rank. W3DCF puts
@@ -1590,12 +1592,120 @@ const VARIANTS = {
       for (let i=0;i<4;i++){ put(back[i],'b',1+i,4,8); put('p','b',1+i,4,7); }
       return out;
     })(),
-    /* Not playable yet: the move generator Meder describes is not the one this engine
-       has. His move is the ordinary 2D move applied to the VERTICAL PROJECTION with the
-       landing level a free choice, which no list of 3D direction vectors can express.
-       Geometry first, moves next. */
-    engine: false,
-    ready: false,
+    /* ---- Meder's move generator ----
+       Article numbers are his; TRID.md quotes them.
+         3.1(a) the move is the ordinary 2D move applied to the VERTICAL PROJECTION, and
+                the landing level is a free choice
+         3.1(c) blocking is COLUMN-WIDE: a piece on any level stops a line through that
+                column - but the column stays landable at a free level
+         3.1(b) landing is level-specific: you may not land on a friendly piece, but you
+                may land above or below one
+         3.1(d) purely vertical moves are forbidden
+         3.1(e) a move may pass OVER a square that does not exist, but may not end on one
+       None of that is a list of 3D direction vectors, which is what slide() and step()
+       consume - so this variant carries its own generator and pseudoMoves() hands over. */
+    projDirs: {
+      r: [[1,0],[-1,0],[0,1],[0,-1]],
+      b: [[1,1],[1,-1],[-1,1],[-1,-1]],
+      q: [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]],
+      k: [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]],
+      n: [[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]],
+    },
+    /* forAttack widens the result to squares a piece merely COVERS - a friendly-occupied
+       square included - because a king may not step onto a square whose capture would be
+       answered, and a pawn attacks its diagonals whether or not anything stands there. */
+    gen: function(x, y, z, forAttack){
+      const T = VARIANTS.trid;
+      const p = board[T.idx(x,y,z)];
+      if (!p) return [];
+      const foe = p.color==='w' ? 'b' : 'w';
+      const out = [];
+      const box = (px,pz) => px>=0 && px<T.nx && pz>=0 && pz<T.nz;
+      const lv  = (px,pz) => { const a=[]; for (let l=0;l<T.ny;l++) if (T.inside(px,l,pz)) a.push(l); return a; };
+      const held = (px,pz) => lv(px,pz).some(l => board[T.idx(px,l,pz)]);
+      const land = (px,pz) => {
+        for (const l of lv(px,pz)){
+          const q = board[T.idx(px,l,pz)];
+          if (!q) out.push({x:px,y:l,z:pz,cap:false});
+          else if (q.color===foe || forAttack) out.push({x:px,y:l,z:pz,cap:true});
+        }
+      };
+      const ride = dirs => {
+        for (const [dx,dz] of dirs){
+          let px=x+dx, pz=z+dz;
+          while (box(px,pz)){
+            if (lv(px,pz).length){
+              land(px,pz);
+              if (held(px,pz)) break;         // 3.1(c)
+            }
+            /* a column holding no square at all is passed over and blocks nothing - 3.1(e) */
+            px+=dx; pz+=dz;
+          }
+        }
+      };
+      const hop = dirs => { for (const [dx,dz] of dirs) if (box(x+dx,z+dz)) land(x+dx,z+dz); };
+
+      if (p.type==='p'){
+        const f = p.color==='w' ? 1 : -1;
+        const free = (px,pz) => lv(px,pz).filter(l => !board[T.idx(px,l,pz)]);
+        if (!forAttack){
+          for (const l of free(x, z+f)) out.push({x, y:l, z:z+f, cap:false});
+          /* The double step needs the intervening COLUMN clear, not merely the level it
+             would have used - that is what blocking means on this board. */
+          if (!p.moved && box(x,z+f) && lv(x,z+f).length && !held(x,z+f))
+            for (const l of free(x, z+2*f)) out.push({x, y:l, z:z+2*f, cap:false});
+        }
+        for (const dx of [-1,1]){
+          const px=x+dx, pz=z+f;
+          if (!box(px,pz)) continue;
+          for (const l of lv(px,pz)){
+            const q = board[T.idx(px,l,pz)];
+            if (forAttack) out.push({x:px,y:l,z:pz,cap:true});
+            else if (q && q.color===foe) out.push({x:px,y:l,z:pz,cap:true});
+          }
+        }
+      }
+      else if (p.type==='n' || p.type==='k') hop(T.projDirs[p.type]);
+      else ride(T.projDirs[p.type]);
+
+      /* 3.1(d). Nothing above produces a pure level change, but an edit might. */
+      return out.filter(m => !(m.x===x && m.z===z));
+    },
+    /* Whether `by` covers a square. Every other variant answers this by casting rays
+       outward from the square, which works because their moves are direction vectors and
+       so are reversible. A projection move with a free landing level is not reversible
+       that way, so this asks each enemy piece what it covers instead. 64 squares makes
+       that affordable. */
+    attacks: function(x,y,z,by){
+      const T = VARIANTS.trid;
+      for (let i=0;i<T.cells;i++){
+        const q = board[i];
+        if (!q || q.color!==by) continue;
+        const c = T.coords(i);
+        for (const m of T.gen(c.x,c.y,c.z,true))
+          if (m.x===x && m.y===y && m.z===z) return true;
+      }
+      return false;
+    },
+    /* A pawn promotes when it can go no further: no square exists ahead of it on its
+       file, at any level. That is geometry rather than a rank number, because this board
+       has no single far rank - files b and c stop at rank 8 while z, a, d and e run to 9
+       on the attack boards. See TRID.md. */
+    promotes: (color,x,y,z) => {
+      const T = VARIANTS.trid, nz = z + (color==='w' ? 1 : -1);
+      for (let l=0;l<T.ny;l++) if (T.inside(x,l,nz)) return false;
+      return true;
+    },
+    /* Meder does not describe en passant or castling on this board, and the king does not
+       start on a rank it could castle along - it starts on an attack board. Both stay off
+       until there is a source to implement them FROM. */
+    pawn: { ep: false },
+    castles: false,
+    /* 300 cells needs 9 bits each way, and 9 + 9 + 3 is exactly the 21 the database
+       rules accept as seven octal digits. It fits with nothing to spare. */
+    moveBits: { from: 9, to: 9, promo: 3 },
+    engine: false,        // the Worker search engine is cubic-only
+    ready: true,
   },
   flat: {
     id: 'flat',
@@ -1776,6 +1886,11 @@ function slide(x,y,z,dirs,color,out){
 function pseudoMoves(x,y,z){
   const p = board[ID(x,y,z)];
   if (!p) return [];
+  /* A variant may bring its own generator. Tri-dimensional chess does, because Meder's
+     move is the ordinary 2D move applied to the vertical projection with the landing
+     level a free choice - which is not a direction vector and so is not something
+     slide() or step() can be handed. */
+  if (V.gen) return V.gen(x,y,z,false);
   const out = [];
   const step = (dx,dy,dz)=>{
     const nx=x+dx, ny=y+dy, nz=z+dz;
@@ -1849,6 +1964,10 @@ function findKing(color){
 }
 
 function attacked(kx,ky,kz,by){
+  /* Same hand-over as pseudoMoves. Casting rays outward from the square works only
+     because ordinary moves are direction vectors and so are reversible; a projection
+     move with a free landing level is not, so that variant answers this its own way. */
+  if (V.attacks) return V.attacks(kx,ky,kz,by);
   // rays
   const ray = (dirs, types) => {
     for (const d of dirs){
@@ -1917,6 +2036,10 @@ function hasAnyLegal(color){
 function bearsOn(x,y,z){
   const p = board[ID(x,y,z)];
   if (!p) return [];
+  /* Same hand-over again - and this one matters even though it only draws markers: the
+     fallback below reaches for STRAIGHT/BISHOP_DIRS/QUEEN_DIRS, which are the CUBE's
+     direction sets, so on any other geometry it would quietly mark the wrong squares. */
+  if (V.gen) return V.gen(x,y,z,true).map(m => ({x:m.x, y:m.y, z:m.z}));
   const out = [];
   const push = (a,b,c)=>{ if (okc(a,b,c)) out.push({x:a,y:b,z:c}); };
   if (p.type==='p'){
@@ -3404,6 +3527,12 @@ function facePlayer(){
      shoulder, with their own back rank furthest away. */
   theta = (mine === 'b') ? 0.72 : 0.72 + Math.PI;
   phi = 1.02;
+  /* Far enough back to see the whole board, whatever shape it is. 17.5 was tuned to a
+     cube eight on a side; tri-dimensional chess is ten ranks long and was arriving
+     cropped, with a third of the board off the screen. The diagonal is what has to fit,
+     and a phone has to fit it in a narrower frame than a desktop does. */
+  const span = Math.hypot(V.nx, V.nz) + V.ny*0.6;
+  radius = Math.max(12, span * (window.innerWidth < 700 ? 1.85 : 1.45));
   updateCamera();
 }
 
@@ -4936,6 +5065,7 @@ if (new URLSearchParams(location.search).has('hooks')){
     },
     legal:(x,y,z)=>legalMoves(x,y,z),
     inside:(x,y,z)=>!!okc(x,y,z),
+    attacked:(x,y,z,by)=>attacked(x,y,z,by),
     /* Has the side to move got anything at all? A teaching position that is stalemate
        or checkmate on arrival looks fine in the data and dead on the board. */
     anyMove:()=>{

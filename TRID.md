@@ -95,6 +95,28 @@ Verbatim article numbers are his.
 - **3.1(e)** A move may **pass over** a non-existent square but may not **end** on one.
 - **3.3** Knights jump, are defined on the projection, and choose their landing level.
 
+## The opening has 20 moves, and that is the finding
+
+With the attack boards **pinned**, White's opening position yields exactly 20 legal
+moves: 16 pawn moves and 4 knight moves. Nothing else on the board can move at all.
+
+That is not a bug, and `tools/test-trid.mjs` asserts it. It falls out of the geometry:
+
+- Files `z` and `e` exist **only** on the attack boards, at ranks 0-1 and 8-9. A pawn
+  standing on `z1` has no square ahead of it at any level, because `z2` does not exist.
+- The two attack-board pawns that *do* have a square ahead (`a1`, `d1`) are blocked by
+  White's own main-board pawns standing on it.
+- Every piece on an attack board — both rooks, the queen, the king — is walled in by its
+  own neighbours, and the queen's long diagonals run straight into friendly pieces.
+
+So **attack-board movement is not an optional extra; it is the game.** Meder's boards
+move precisely because a static tri-D board is this cramped. Phase 1 is a correct and
+verifiable implementation of a position that a real game leaves almost immediately.
+
+The count is recorded in the test so that a change to the generator has to be deliberate.
+It is not ground truth — nothing here is — but it is the most this variant can be given
+until a Meder-legal game record turns up to check against.
+
 ## What is still open
 
 - **Pawn direction, promotion rank and the double step** were not settled by this sweep.

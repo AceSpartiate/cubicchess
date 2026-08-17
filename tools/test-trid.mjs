@@ -159,6 +159,93 @@ royalsOnAB === 4
   ? ok('both kings and both queens start on attack boards (Meder)')
   : no(`${royalsOnAB} king/queen on attack boards, want 4`);
 
+/* ================================ THE MOVE GENERATOR ================================
+ * There is no perft to check against and no second implementation to disagree with, so
+ * this asserts what MUST hold whatever the numbers turn out to be:
+ *   - Meder's own articles, as invariants over every move generated
+ *   - mirror symmetry, which the opening position has and which a large class of bugs
+ *     breaks: White and Black must have exactly the same number of moves
+ *   - fixed counts, so that a change to the generator has to be a deliberate one
+ */
+console.log('\n  --- the move generator');
+if (cc.variant('trid') !== 'trid') { no('trid is not playable - cc.variant() refused it'); }
+else {
+  cc.newGame();
+
+  const N = { p:'pawn', r:'rook', n:'knight', b:'bishop', q:'queen', k:'king' };
+  const all = side => {
+    const out = [];
+    for (let i=0;i<V.cells;i++){
+      const c = V.coords(i), pc = cc.at(c.x,c.y,c.z);
+      if (!pc || pc.c !== side) continue;
+      for (const m of cc.legal(c.x,c.y,c.z)) out.push({ from:c, to:m, pc });
+    }
+    return out;
+  };
+
+  const white = all('w');
+  let broke = { offBoard:0, ontoFriend:0, pureVertical:0 };
+  for (const mv of white) {
+    if (!cc.inside(mv.to.x, mv.to.y, mv.to.z)) broke.offBoard++;                 // 3.1(e)
+    const occ = cc.at(mv.to.x, mv.to.y, mv.to.z);
+    if (occ && occ.c === mv.pc.c) broke.ontoFriend++;                             // 3.1(b)
+    if (mv.to.x === mv.from.x && mv.to.z === mv.from.z) broke.pureVertical++;     // 3.1(d)
+  }
+  broke.offBoard     ? no(`${broke.offBoard} move(s) end on a square that does not exist (3.1e)`)
+                     : ok('no move ends on a non-existent square (3.1e)');
+  broke.ontoFriend   ? no(`${broke.ontoFriend} move(s) land on a friendly piece at the same level (3.1b)`)
+                     : ok('no move lands on a friendly piece at its own level (3.1b)');
+  broke.pureVertical ? no(`${broke.pureVertical} purely vertical move(s) (3.1d)`)
+                     : ok('no purely vertical moves (3.1d)');
+
+  /* The opening position is a mirror: (x, y, z) -> (x, 4-y, 9-z) with the colours
+     swapped. So the two sides must have exactly the same number of moves. Almost any
+     asymmetric error in the generator - a pawn direction, an off-by-one on a rank
+     bound, a level bound - shows up here and nowhere else. */
+  const black = (() => { cc.apply(1,0,2, 1,0,3); const b = all('b'); cc.newGame(); return b; })();
+  white.length === black.length
+    ? ok(`the opening position is symmetric: ${white.length} moves for each side`)
+    : no(`asymmetric opening: White has ${white.length} moves, Black has ${black.length}`);
+
+  /* Fixed counts. Not ground truth - nothing here is - but a change to any of them has
+     to be deliberate, which is the most this variant can be given. */
+  /* 20, and it is LOW on purpose - see TRID.md. With the attack boards pinned, files z
+     and e exist only at ranks 0-1 and 8-9, so the pawns standing on them have no square
+     ahead at any level; and every piece on an attack board is walled in by its own
+     neighbours. Only the four main-board pawns and the two knights can move at all.
+     That is the correct answer for this board and the clearest possible evidence that
+     attack-board movement is the game rather than an extra. */
+  const OPENING = 20;
+  white.length === OPENING
+    ? ok(`opening move count holds at ${OPENING}`)
+    : no(`opening move count is ${white.length}, recorded ${OPENING} - if this change was `
+       + `intended, update the number here AND say why in TRID.md`);
+
+  /* Per-piece-type counts, so a regression names the piece it broke. */
+  const byType = {};
+  for (const mv of white) byType[mv.pc.t] = (byType[mv.pc.t]||0) + 1;
+  console.log('  note  White\'s opening moves by piece: '
+    + Object.keys(N).filter(t=>byType[t]).map(t => `${N[t]} ${byType[t]}`).join(', '));
+
+  /* Every legal move must leave the mover's own king safe. legalMoves() filters for this
+     already, so this is really a check that the filter is running through the variant's
+     own attacks() rather than the shared ray-casting one, which cannot see these moves. */
+  let selfCheck = 0;
+  for (const mv of white.slice(0, 40)) {
+    const snap = cc.snapshot();
+    cc.apply(mv.from.x, mv.from.y, mv.from.z, mv.to.x, mv.to.y, mv.to.z, null);
+    let kx=-1, ky=-1, kz=-1;
+    for (let i=0;i<V.cells;i++){ const c=V.coords(i), q=cc.at(c.x,c.y,c.z);
+      if (q && q.t==='k' && q.c==='w'){ kx=c.x; ky=c.y; kz=c.z; } }
+    if (kx>=0 && cc.attacked && cc.attacked(kx,ky,kz,'b')) selfCheck++;
+    cc.restore(snap);
+  }
+  selfCheck ? no(`${selfCheck} "legal" move(s) leave White's own king attacked`)
+            : ok('no legal move leaves the mover in check');
+
+  cc.newGame();
+}
+
 console.log(bad ? `\n${bad} problem(s) - the board is not the board TRID.md describes`
-                : '\nthe lattice, the square set and the opening position all match TRID.md');
+                : '\nthe lattice, the square set, the opening position and the generator all hold');
 process.exit(bad ? 1 : 0);
